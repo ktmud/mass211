@@ -42,6 +42,9 @@ options(htmltools.dir.version = FALSE)
 .fullwidth-table table {
   width: 90%;
 }
+body {
+  max-width: 1076px;
+}
 </style>
 
 # Introduction
@@ -232,7 +235,7 @@ Use above interactive treemap to explore the average total time consumption per 
 
 Since most of the 211 services are about providing help to needy families and individuals, the geographic distribution of 211 calls strongly correlates with the income level of a region.
 
-```{r, fig.width=5.9, fig.height=3}
+```{r, fig.width=6, fig.height=3}
 library(leaflet)
 
 pal <- colorNumeric("viridis", NULL)
@@ -362,7 +365,7 @@ cat.corr %<>% as_tibble() %>%
   separate(value, into = c("tau", "p.value"), sep = ":", convert = TRUE)
 ```
 
-```{r, fig.wigth=5.9, fig.height=5, fig.cap="Concordance between service categories"}
+```{r, fig.wigth=6, fig.height=5, fig.cap="Concordance between service categories"}
 cat.corr %>%
   filter(
     p.value < 0.01
