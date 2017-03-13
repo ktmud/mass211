@@ -54,7 +54,7 @@ This report is a rough analysis of all the 211 calls made between _Feb 25, 2016_
 - Nearly half of the callers were given more than one referral.
 - EEC Applications and status checks are not only the highest volume of calls but also the most time-consuming.
 - Both race and income are contributing factors to 211 demands. Low-income non-white people use 211 more than others, but when at the same income level, white people is slightly more likely to use 211 than other races.
-- Most of the popular service categories correlate with each other, i.e. a neighborhood in high demand of one service is often in high demand of the other.
+- Most of the popular service categories correlate with each other, i.e. a neighborhood in high demand of one service is often in high demand of another.
 
 # Drilling Down
 
@@ -95,7 +95,7 @@ sankeyNetwork(
 </tr>
 </table>
 
-Above graph shows where the calls were coming from and where the callers were referred to. The majority of calls are from first-time callers referred by human service agencies. `Housing` and `Income Support/Assistance` are the two most inquired issues. Most of `Income Support/Assistance` are about the Early Education and Care program (see below).
+Above graph shows where the calls were coming from and where the callers were referred to. The majority of them are from first-time callers referred by human service agencies. `Housing` and `Income Support/Assistance` are the two most inquired issues.^[Most `Income Support/Assistance` requests are about the Early Education and Care program (see below).]
 
 ## Calls with multiple purposes
 
@@ -118,7 +118,7 @@ count.call.cats5 %>%
 
 The most common case of multiple purpose calls were those asking for child care assistance programs, then information regarding child care providers (child care centers or early start sites) were also provided.
 
-Another case is people making complaints about utility companies while seeking financial assistance in utility payment.
+Another common case is people making complaints about utility companies while seeking financial assistance in utility payment.
 
 ## Calls with single purpose
 
@@ -138,11 +138,11 @@ count.call.cats5 %>%
   )
 ```
 
-Child care related calls took the largest portion of the caseload, in part because that Mass 211 has a unique collaboration with Massachussets Department of [Early Education and Care](http://www.mass.gov/edu/birth-grade-12/early-education-and-care/) (EEC) ^[I have found no other states are having the same high-volume of calls related to child care.], but also because some parents frequently called to check the status of their enrollment application for EEC subsidies. ^[About 20% of child care related calls were explicitly marked as status check.] One possible measure to reduce these calls is to better inform parents the expected processing time, if there exists a set expectation.
+Child care related calls took the largest portion of the caseload, not only because that Mass 211 has a unique collaboration with Massachussets Department of [Early Education and Care](http://www.mass.gov/edu/birth-grade-12/early-education-and-care/) (EEC) ^[I have found no other states are having the same high-volume of calls related to child care.], but also because some parents frequently called to check their enrollment application for EEC subsidies. ^[About 20% of child care related calls were explicitly marked as status check.] It seems we may need to better inform parents with the expected processing time, if there indeed exists an expectation.
 
-"211 Systems" are mostly border-line-crossing calls from neighboring states; "Directory Assistance" are those intended to call 411. They seem unavoidable.
+"211 Systems" are mostly border-line-crossing calls from neighboring states; "Directory Assistance" are those intended for 411. They both seem unavoidable.
 
-Putting these categories aside, the most frequently inquired human services are EEC Applications, Homeless Shelter/Rent Assistance, Electricity, and Food.
+Putting these categories aside, the most frequently inquired human services are _EEC Applications_, _Homeless Shelter/Rent Assistance_, _Electricity_, and _Food_.
 
 ```{r, fig.width=4, fig.height=3, fig.retina=2, fig.margin=TRUE}
 library(ggplot2)
@@ -332,9 +332,9 @@ cor.res <- cor.test(~ Housing + `Income Support`,
 cor.res.tau <- cor.res$estimate %>% round(3)
 ```
 
-Take the most requested two service categories for example, zip code areas with higher demands for Income Support (Child Care Assistance) almost always have a high demand for Housing Assistance (Kendall's tau coefficients $r_{\tau}$ = `r cor.res.tau`, p < 0.000).
+Take the most requested two service categories for example, zip code areas with higher demands for _Income Support (Child Care Assistance)_ almost always have a high demand for _Housing Assistance_ (Kendall's tau coefficients $r_{\tau}$ = `r cor.res.tau`, p < 0.000).
 
-The same strong correlation could be found at most category combinations.
+The same strong correlation can be found at most AIRS Need Category pairs.
 
 ```{r}
 cats <- unique(mmcalls$airs.cat)
@@ -387,12 +387,11 @@ cat.corr %>%
   labs(x = "", y = "")
 ```
 
-This graph shows Kendall's tau coefficients for each combination of two AIRS Problem/Need categories. The darker the blue, the more in agreement the two categories are. Transparent tiles represent insignificant results, mostly because of low call volume. To minimize bias, when computing the coefficient for a pair of categories, zip codes with zero call in either of the categories were ignored.
+This graph shows Kendall's tau coefficients for each pair of AIRS Problem/Need categories. The darker the blue, the more in agreement the two are. Transparent tiles represent insignificant results, mostly because of low call volume. To minimize bias, zip codes with no call in one of the categories were removed before calculation.
 
-The most obvious pairs are Art/Culture/Recreation + Clothing/Personal/Household Needs, Employment + Volunteers/Donations, Disaster Services + Volunteers/Donations, and Housing + Income Support.
+The most obvious pairs are _Art/Culture/Recreation + Clothing/Personal/Household Needs_, _Employment + Volunteers/Donations_, _Disaster Services + Volunteers/Donations_, and _Housing + Income Support_.
 
-It is not immediately clear whether calls of different categories are from the same group of people.
-
+It is not immediately clear whether calls of different categories are from the same group of people or not.
 
 # Notes
 
@@ -416,11 +415,11 @@ That is why I used AIRS Neet Categories for general analaysis, but Level 5 Taxon
 
 # Next Steps
 
-We have completed the analysis of the big picture and created graphs and tools to explore basic characteristics of the demands.
+This report presents the big picture of the state's human service needs of the past year and created graphs and tools to explore some of the basic characteristics of the data.
 
 The next step is to cross-validate with more data sources and start analyzing other data fields such as age, sex, and family characteristics.
 
-But before doing that, building a simple and robust typology is yet still an unresolved challenge. I tried some name matching with Regular Expressions, but it did not work well for all cases.
+But before that, building a simple and robust typology is yet still an unresolved challenge. I tried some name matching with Regular Expressions, but it did not work well for all cases.
 
 However, if we are satisfied with current big picture presentation, we may also choose to dive into specific topics immediately. That is, to isolate calls related to a certain topic, for instance, people with mental health and substance abuse issues, then conduct comprehensive analysis in caller profiling, longitudinal trend, etc. 
 
