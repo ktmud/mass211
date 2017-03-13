@@ -1,0 +1,29 @@
+---
+output: html_document
+---
+
+<style>
+table.table {
+  font-family: calibri;
+}
+table.table td:first-child {
+  font-family: courier new;
+}
+table.table td:last-child {
+  font-weight: 600;
+  color: #e00;
+}
+</style>
+
+```{r, echo = FALSE}
+ddf <- ToDataFrameTree(cats.tree, format = TRUE, "tname", "n") 
+ddf[-1, ] %>% mutate(`high` = ifelse(n > 20, "*", "")) %>%
+  knitr::kable()
+```
+
+
+```{r, eval = FALSE, echo = FALSE}
+rmarkdown::render("TaxonomyPrintable.Rmd")
+```
+
+

@@ -1,0 +1,8 @@
+.httr-oauth
+.RData
+.DS_Store
+.Rproj.user/
+data/
+ref/
+tmp.*
+*.bib

@@ -1,0 +1,25 @@
+---
+title: "Example Call Notes"
+author: "Jianchao Yang"
+date: "2/24/2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, results="asis"}
+dat <- calls$`Mass 211`
+notes <- c(
+  filter(dat, !is.na(cc.notes)) %>% select(cc.notes) %>% unlist(),
+  filter(dat, !is.na(narrative)) %>% select(narrative) %>% unlist())
+notes <- paste("<li>", notes, collapse = "\n")
+notes <- paste0("<ol>", notes, "</ol>", collpase = "\n")
+write(notes, f="call.notes.html")
+```
+
+```{r, eval = FALSE}
+rmarkdown::render("Call Notes.Rmd")
+```
+

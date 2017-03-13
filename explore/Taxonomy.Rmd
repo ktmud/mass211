@@ -1,0 +1,39 @@
+---
+title: "Taxonomy"
+author: "Jianchao Yang"
+date: "2/10/2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+```{r, results='as.is'}
+library(listviewer)
+l <- ToListSimple(tax.tree)
+jsonedit(l)
+```
+
+```{r, results='asis'}
+library(networkD3)
+
+updateName <- function(l) {
+  if (!is.null(l$children)) {
+    names(l) <- c("name", "children")
+    l$children <- lapply(l$children, updateName)
+  } else {
+    names(l) <- c("name")
+  }
+  l
+}
+l <- ToListExplicit(tax.tree, unname = TRUE, nameName = "tname", keepOnly = "tname")
+l <- updateName(l)
+diagonalNetwork(l)
+```
+
+
+```{r, eval = FALSE}
+rmarkdown::render("Taxonomy.Rmd")
+```
+
