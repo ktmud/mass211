@@ -16,6 +16,7 @@ source("src/solidify.R")
 source("src/clean_raw.R")
 source("src/prepare.R")
 source("src/metrics.R")
-# source("./cats.R")
+source("src/treemap.R")
+#source("src/cats.R")
 source("src/map.R")
 

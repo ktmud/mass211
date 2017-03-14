@@ -206,6 +206,7 @@ mcalls.cats.summary %>% head(10) %>%
 Note that for calls with multiple purposes, their call lengths are evenly divided for each purpose.
 
 ```{r fig.fullwidth, fig.width=10, fig.height=4}
+library(d3treeR)
 mcalls.treemap %>% d3tree2(rootname = "Taxonomy")
 ```
 
@@ -282,7 +283,7 @@ leaflet(zip.geo.simple) %>%
     # use log for color scales, but change it back for legen values
     labFormat = labelFormat(
       transform = function(x) round(exp(x), 1)),
-    title = "calls/1k pop"
+    title = "calls/1k ppl"
   )
 ```
 
@@ -329,6 +330,7 @@ A call may naturally have multiple purposes, but does a call for certain service
 To answer this question, we can check the concordance of need categories, i.e. the correlation between volumes of calls in different categories at a given region.
 
 ```{r}
+source("src/cat.interaction.R")
 cor.res <- cor.test(~ Housing + `Income Support`,
                     zip.cat.count %>% filter(Housing > 0 & `Income Support` > 0),
                     method = "kendall")

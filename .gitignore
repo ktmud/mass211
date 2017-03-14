@@ -6,3 +6,4 @@ data/
 ref/
 tmp.*
 *.bib
+.Rproj.user

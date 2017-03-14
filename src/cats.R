@@ -95,4 +95,3 @@ if (!exists("full.cats")) {
 cats.tree <- CountCats(mcalls)
 cats.tree$code <- NULL  # because it is in the path already
 cats.tree <- as.Node(cats.tree)
-
