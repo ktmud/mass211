@@ -35,6 +35,14 @@ n.call.with.cat <- count.call.cats5 %>% summarize(n = sum(n)) %>% unlist()
 n.multiple.cat / n.call.with.cat
 
 
+icalls %>%
+  left_join(call.cats5, by = "id") %>%
+  filter(
+    str_count(external.referrals, ";") >= 2 &
+      n.cat > 1
+  ) %>%
+  nrow()
+
 # ----------------- Summary - for tree map ---------
 
 # ---------------

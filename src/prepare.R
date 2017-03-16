@@ -18,10 +18,14 @@ CleanCalls <- function(calls) {
   
   ret <- icalls %>%
     mutate(
+      external.referrals = ReferralsMade %>%
+        # remove internal referrals
+        str_replace("(^|;)[^;]*2-?1-?1.*?;", "\\1"), 
       city.state = str_c(city, state, sep = ", "),
       call.length = call.length + 0.5
     ) %>%
     select(id, version, call.start, call.length,
+           ReferralsMade, external.referrals,
            zip, city, county, state, city.state,
            # only less than 10% have phone number
            phone, comment, lang, interp.used,
@@ -100,8 +104,6 @@ CleanReferralsMade <- function() {
 
 CleanAgency <- function(x) {
   CleanStrings(x, to.remove = cities) %>%
-    str_replace(".*(2-1-1|211.org).*", "211 System") %>%
-    str_replace(".*(3-1-1|311).*", "311 System") %>%
     str_replace(".*Catholic Char.*", "Catholic Charities") %>%
     str_replace(".*(Helpline|Hotline).*", "Helpline") %>%
     str_replace(".*SNAP.*", "SNAP") %>%
@@ -110,6 +112,8 @@ CleanAgency <- function(x) {
                 "Emergency Financial Support") %>%
     str_replace(".*Early Education (&|and) Care.*",
                 "Early Education & Care") %>%
+    str_replace(".*(2-1-1|211.org|211).*", "211 System") %>%
+    str_replace(".*(3-1-1|311).*", "311 System") %>%
     str_replace(".*Salvation.*", "Salvation Army") %>%
     str_replace(".* Corps.*", "Salvation Army") %>%
     str_replace(".*CFCE.*", "CFCE") %>%
@@ -232,3 +236,15 @@ mcalls <- icalls %>%
   filter(!is.na(airs.cat))
 
 # View(mcalls %>% count(agency.simple, sort = T))
+
+# referrals made
+n.external.ref <- icalls %>%
+  filter(external.referrals == "" | is.na(external.referrals)) %>% nrow()
+1 - n.external.ref / nrow(icalls)
+
+icalls %>%
+  filter(str_count(external.referrals, ";") >= 2) %>%
+  nrow()
+icalls %>%
+  filter(str_count(external.referrals, ";") >= 1) %>%
+  nrow()

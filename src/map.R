@@ -40,7 +40,7 @@ count.zip <- zip.geo@data %>%
 
 zip.geo@data <- count.zip %>%
   select(zip, pa_name, county, TotalPop, total.minutes, p.call)
-zip.geo.simpe <- ms_simplify(zip.geo)
+zip.geo.simple <- ms_simplify(zip.geo)
 
 names(county.geo) %<>% str_to_lower()
 county.geo %<>%

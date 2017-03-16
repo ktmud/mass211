@@ -1,0 +1,504 @@
+---
+title: 'Mass 211: the Big Picture'
+author: "Jesse Yang"
+date: '`r Sys.Date()`'
+output:
+  tufte::tufte_html:
+    tufte_variant: envisioned
+    #toc: true
+  tufte::tufte_handout:
+    citation_package: natbib
+    latex_engine: xelatex
+  tufte::tufte_book:
+    citation_package: natbib
+    latex_engine: xelatex
+link-citations: yes
+subtitle: Current Landscape of Human Service Demands in Massachusetts
+bibliography: skeleton.bib
+
+---
+
+```{r setup, include=FALSE}
+library(tufte)
+# invalidate cache when the tufte version changes
+knitr::opts_chunk$set(
+  echo = FALSE,
+  message = FALSE, warning = FALSE,
+  tidy = FALSE, cache.extra = packageVersion('tufte')
+)
+options(htmltools.dir.version = FALSE)
+```
+
+<style>
+.sankey-caption {
+  width: 90%;
+  border: 0;
+  font-size: 10pt;
+  margin-top: 10px;
+}
+.sankey-caption td {
+  padding-right: 10px;
+}
+.fullwidth-table table {
+  width: 90%;
+}
+body {
+  max-width: 1076px;
+}
+</style>
+
+# Introduction
+
+This report is a rough analysis of all the 211 calls made between _Feb 25, 2016_, and _Feb 9, 2017_^[If I understood the data correctly, the new system was still in testing before May 2016, because the number of calls were really small before that time. So the report is actually based on data frame May 2016 to Feb 2017.], using the iCarol reports generated on Feb 9. All the numbers and facts are of the whole time span, i.e., they are about the whole landscape of human service requests received by Mass 211 during the past approxmiately 10-month period.
+
+Both AIRS Problem/Need Categories (17 items) and the Taxonomy's Level 5 terms (871 items) were used for analysis. The former was used for high-level analyses and the latter for understanding exact purposes of the calls.
+
+# Key Findings
+
+- The majority of 211 users are first-time callers referred by human service agencies.
+- 64% of all callers were then referred to at least one external agency; 40% got at least two.
+- Early Education and Care applications and status checks are not only the highest volume of calls but also the most time-consuming.
+- Both race and income are contributing factors to 211 demands. Low-income non-white people use 211 more than others, but the impact of lower income on white people is slightly smaller than on other races.
+- Most of the popular service categories correlate with each other, i.e. a neighborhood in high demand of one service is often in high demand of another.
+
+# Drilling Down
+
+## The flow
+
+```{r, fig.fullwidth=TRUE, fig.width=10, caption="Hello"}
+source("./src/sankey.R")
+
+sankeyNetwork(
+  Links = sk.links,
+  Nodes = sk.nodes,
+  Source = "source",
+  Target = "target",
+  Value = "value",
+  NodeID = "name",
+  linkOpacity = 0.08,
+  colourScale = "d3.scaleOrdinal(d3.schemeCategory10)",
+  units = "calls",
+  margin = list(left = 0, right = 0, top = 0, bottom = 0),
+  fontSize = 10,
+  nodePadding = 9,
+  nodeWidth = 40
+)
+``` 
+
+<table class="sankey-caption">
+<colgroup>
+  <col width="27%">
+  <col width="21%">
+  <col width="25%">
+  <col>
+</col>
+<tr>
+  <td>Have you used Mass211 before?</td>
+  <td>How did you hear of Mass211?</td>
+  <td align="right">AIRS I&R Need Category</td>
+  <td align="right">Referrals Made</td>
+</tr>
+</table>
+
+Above graph shows where the calls were coming from and where the callers were referred to. The majority of them are from first-time callers referred by human service agencies. `Housing` and `Income Support/Assistance` are undoubtly the two most inquired issues. For `Income Support/Assistance` requests, the vast majority of them were about Massachusett [Early Education and Care](http://www.mass.gov/edu/birth-grade-12/early-education-and-care/) (EEC) program.
+
+## Calls with multiple purposes
+
+A call may have multiple purposes, and henthforth be referred to multiple agencies. About one-third of Mass 211 calls were labled with more than one Taxonomy term (although they may still be of single purpose).
+
+So which services relate to each other the most so that peple needed to request them all together in one call?
+
+```{r}
+count.call.cats5 %>%
+  filter(str_detect(cats, " \\|\\| ")) %>%
+  head(10) %>%
+  mutate(
+    cats = str_replace_all(cats, "\\|\\|", "<br> &nbsp; & "),
+    p = round((n / n.call.with.cat) * 100, 2)
+  ) %>%
+  knitr::kable(
+    .,
+    caption = "Top 10 Level 5 Taxonomy term combinations",
+    col.names = c("Purposes of a call", "Num. of Calls", "% of all calls")
+  )
+```
+
+The most common case of multiple purpose calls were those asking for child care assistance programs together with information regarding child care providers (child care centers or early start sites).
+
+Another common case is people making complaints about utility companies while seeking financial assistance in utility payment.
+
+Obviously, calls with multiple purposed would get multiple referrals; but even for single purpose calls, they do also receive multiple referrals. In fact, 40% of all calls were referred to at least two external agency, but 31% of them were associated with only one Taxonomy term.
+
+## Calls with single purpose
+
+So what are the top requests from calls with single purpose? 
+
+```{r}
+count.call.cats5 %>%
+  filter(!str_detect(cats, "\\|\\|")) %>%
+  head(10) %>%
+  mutate(
+    p = round((n / n.call.with.cat) * 100, 2)
+  ) %>%
+  knitr::kable(
+    .,
+    caption = "Top 10 Level 5 Taxonomy terms for single purpose call",
+    col.names = c("Taxonomy Term", "Num. of Calls", "% of all calls")
+  )
+```
+
+Child care related calls took the largest portion of the caseload, mostly because the collaboration between Mass 211 and Massachussets Department of Early Education and Care ^[EEC requests seem unique to Mass 211, as I have found no other states were having the same high-volume of calls related to child care.]. Mass 211 not only handles inquires regarding EEC programs, but also takes in applications and status updates for such programs. Some parents frequently called to check their application status. ^[About 20% of child care related calls were explicitly marked as status check.] To reduce workload, it may be beneficial to reassess how parents were informed with the expected processing time, if that haven't been done before.
+
+"211 Systems" are mostly cross-border calls from neighboring states; "Directory Assistance" are those intended for 411. They both seem underisable and unavoidable in the meantime.
+
+Putting these categories aside, the most frequently inquired human services are _EEC Applications_, _Homeless Shelter/Rent Assistance_, _Electricity_, and _Food_.
+
+```{r, fig.width=4, fig.height=3, fig.retina=2, fig.margin=TRUE}
+library(ggplot2)
+
+avg.call.length <- mean(icalls$call.length, na.rm = TRUE)
+  
+icalls %>%
+  filter(call.length < 60) %>%
+  # revert to original call.length for histogram plotting
+  ggplot(aes(x = call.length - 0.5, y = ..density..)) +
+    geom_histogram(binwidth = 1) +
+  labs(title = "Histogram of call length (all calls)",
+       x = "Call length (minute)",
+       y = "Density") +
+  theme_minimal() +
+  theme(
+    plot.background = element_rect(fill = "#fefefe", color = "#fefefe"),
+    axis.text = element_text(family = "Avenir Next", size = 8),
+    axis.title = element_text(family = "Avenir Next", size = 10),
+    plot.title = element_text(family = "Avenir Next"))
+```
+
+## Call length
+
+Average call length of all calls is `r round(avg.call.length, 1)` minutes. Most calls (75%) finish within 10 minutes, 95% of them finish within 20 minutes. Some took as long as 40 minutes or more, but those were rare cases and often involved interpretation services (the caller didn't speak English).
+
+```{r}
+avg.call.length2 <- mcalls %>%
+  filter(!str_detect(cat4.name, "(211|311|Directory Assistance)")) %>%
+  distinct(id, .keep_all = TRUE) %>%
+  summarize(cl = mean(call.length)) %>%
+  unlist()
+```
+
+When removed undesired calls (211 Systems and Directory Assistance), which normally end quickly, the average call length becomes `r round(avg.call.length2, 1)` minutes.
+
+```{r}
+summary(icalls$call.length) %>%
+  broom::tidy() %>%
+  knitr::kable(caption = "Mean, median and quantiles of call length")
+```
+
+If taking call length into consideration, the list of top categories by caseload would be different. Following are the average call length and number of calls aggregated to the Level 5 Taxonomy term.
+
+```{r}
+mcalls.cats.summary %>% head(10) %>%
+  select(cat.name, call.length.mean, n.calls, min.per.day) %>%
+  knitr::kable(
+    digits = 2,
+    caption = "The most time-consuming calls",
+    col.names = c("Taxonomy Term",
+                  "Avg. call length",
+                  "Num of calls",
+                  "Minutes per day")
+  )
+```
+
+When aggregating call length for categories, the call length of a call with multiple categories was evenly divided and assigned to each purpose.
+
+Following treemap shows the total time consumption in terms of call length for all Taxonomy terms.
+
+```{r fig.fullwidth, fig.width=10, fig.height=4}
+library(d3treeR)
+mcalls.treemap %>% d3tree2(rootname = "Taxonomy")
+```
+
+```{r, eval = FALSE}
+# quantile(icalls$call.length, probs = c(0.8, 0.9, .95))
+mcalls %>%
+  filter(
+    str_detect(
+      cat5.name,
+      "Child Care"
+    ),
+    str_detect(
+      comment,
+      regex("(status check|check status|^ *status *$)",
+            ignore_case = TRUE))
+  ) %>%
+  distinct(id, .keep_all = TRUE) %>%
+  summarize(
+    n = n(),
+    cl = mean(call.length)
+  )
+```
+
+This is a hieratic treemap, you can click on the tiles to enter a subcategory, then click on the title bar at the top of the chart to go back.
+
+## Geographic Distribution
+
+Since most 211 services are about helping needy families and individuals, the geographic distribution of 211 calls inevitably strongly correlates with the income level of a neighborhood.
+
+```{r, fig.width=6, fig.height=3}
+library(leaflet)
+
+pal <- colorNumeric("viridis", NULL)
+
+leaflet(zip.geo.simple) %>%
+  setView(-71.1, 42, zoom = 7) %>%
+  addTiles() %>%
+  addProviderTiles(providers$CartoDB.Positron) %>%
+  addPolygons(
+    data = county.geo,
+    smoothFactor = 0.3,
+    weight = 1,
+    color = "#333333",
+    opacity = 0.7,
+    fillOpacity = 0.8,
+    fillColor = ~pal(log(p.call)),
+    label = ~str_c(
+      county, ": ", formatC(p.call, digits = 2, big.mark = ",")
+    ),
+    highlightOptions = highlightOptions(opacity = 1, color = "#ffffff"),
+    group = "County"
+  ) %>%
+  addPolygons(
+    weight = 0.5, opacity = 0.1, color = "#333333",
+    smoothFactor = 0.3, fillOpacity = .9,
+    fillColor = ~pal(log(p.call)),
+    label = ~str_c(
+      zip, " ", pa_name, ": ", formatC(p.call, digits = 2, big.mark = ",")
+    ),
+    highlightOptions = highlightOptions(
+      opacity = .7, color = "#ffffff", bringToFront = TRUE
+    ),
+    group = "ZIP Code"
+  ) %>%
+  addLayersControl(
+    overlayGroups = c("County", "ZIP Code"),
+    options = layersControlOptions(collapsed = FALSE)
+  ) %>%
+  addLegend(
+    "bottomright",
+    pal = pal,
+    values = ~log(p.call),
+    opacity = 0.7,
+    # use log for color scales, but change it back for legen values
+    labFormat = labelFormat(
+      transform = function(x) round(exp(x), 1)),
+    title = "calls/1k ppl"
+  )
+```
+
+A multiple linear regression was calculated at the zip code level to predict the number of calls per 1,000 residents based on their income, race, and education level.
+
+I have chosen percentages of people who completed at least a Bachelor's degree , percentages of white people, and median house income measured in 1,000 US dollars  as the prediction variables. An interaction term "Race: White + Income" was also included to reveal any potential interaction between the effects of house income and race.
+
+```{r, results='hide'}
+library("scales")
+
+count.zip.clean <- count.zip %>%
+  filter(TotalPop > 100) %>%
+  select(p.call, AtLeastBachelor, White, MedHouseIncome)
+  # na.omit() %>%
+  # mutate(
+  #   p.call = rescale(p.call),
+  #   AtLeastBachelor = rescale(AtLeastBachelor),
+  #   White = rescale(White),
+  #   MedHouseIncome = rescale(MedHouseIncome)
+  # )
+fit <- lm(p.call ~
+            AtLeastBachelor +
+            White * MedHouseIncome,
+          count.zip.clean)
+fit.output <- stargazer::stargazer(
+  fit, type = "html",
+  dep.var.labels = "Number of calls per 1,000 people",
+  covariate.labels =
+    c("Education: Bachelor and Above (%)",
+      "Race: White (%)",
+      "Median House Income (1K USD)",
+      "White:MedianHouseIncome"),
+  digits = 3
+)
+```
+```{r, results='asis', fig.cap="Multiple Regression"}
+fit.coef <- coef(fit) %>% round(3)
+fit.output %>% str_replace_all("\\*", "&ast;") %>%
+  str_c(collapse = "\n") %>%
+  cat()
+```
+
+Calculated from 477 ZIP code areas, this model explains 47% of the variation, and statistical significance was seen for all variables.
+
+The number of calls per 1,000 people in a 10-month period would decrease `r abs(fit.coef[2])` per 1 percent increase in people with a Bachelor's degree, `r abs(fit.coef[3])` per 1 percent increase in white residents, and `r abs(fit.coef[4])` per $1,000 increase in median house income.
+
+For different races (white and non-white), the effect of income may differ, but the difference is very small (only `r abs(fit.coef[5])` calls)--when it comes to whether call 211 for help, white people (or residents in predominantly white neighborhoods) are less affected by having a lower income.
+
+```{r}
+count.zip.clean %>%
+  mutate(
+    is.mostly.white = (White > 70) %>% factor() %>%
+      fct_recode(Yes = "TRUE", No = "FALSE") %>%
+      fct_relevel("Yes", "No")
+  ) %>%
+  ggplot(
+    aes(x = MedHouseIncome, y = p.call, color = is.mostly.white)
+  ) +
+  geom_point(size = .5) +
+  geom_smooth(method = "lm") +
+  labs(
+    title = "Income, race and number of 211 calls",
+    subtitle = "for ZIP code areas",
+    x = "Median house income",
+    y = "calls per 1k ppl.",
+    color = "White > 70%"
+  ) +
+  theme(
+    plot.background = element_rect(fill = "#fefefe", color = "#fefefe"),
+    text = element_text(family = "Avenir Next"),
+    axis.text = element_text(size = 8),
+    axis.title = element_text(size = 10))
+```
+
+In above graph, the slope of the two lines indicate how much the change of income affects the change of calls. For ZIP codes with higher percentage of white residents, the absolute value of the slope is smaller. But this might also be related to the distribution of 
+
+## Category correlations
+
+A call may naturally have multiple purposes, but does a call for certain service predict the need of other service types?
+
+To answer this question, we can check the concordance of need categories, i.e. the correlation between volumes of calls in different categories.
+
+```{r}
+source("src/cat.interaction.R")
+cor.res <- cor.test(~ Housing + `Income Support`,
+                    zip.cat.count %>% filter(Housing > 0 & `Income Support` > 0),
+                    method = "kendall")
+cor.res.tau <- cor.res$estimate %>% round(3)
+```
+
+Take the most requested two service categories for example, zip code areas with higher demands for _Income Support (Child Care Assistance)_ almost always have a high demand for _Housing Assistance_ (Kendall's tau coefficients $r_{\tau}$ = `r cor.res.tau`, p < 0.000).
+
+The same strong correlation can be found at most AIRS Need Category pairs.
+
+```{r}
+cats <- unique(mmcalls$airs.cat)
+
+cat.corr <-
+  sapply(cats, function(x) {
+    sapply(cats, function(y) {
+      if (x == y) {
+        # 0 means no relation, -1 means disagreement is perfect,
+        # 1 mean perfectly agrees
+        return("0:0")
+      }
+      f <- formula(sprintf("~  \`%s\` + \`%s\`", x, y))
+      dat <- zip.cat.count %>%
+        .[.[[x]] > 0 & .[[y]] > 0, ]
+      ct <- cor.test(formula = f, data = dat, method = "kendall")
+      str_c(ct$estimate, ":", ct$p.value)
+    })
+  })
+cat.corr <- cat.corr %>% as.data.frame()
+cat.corr$key <- row.names(cat.corr) %>% str_replace(".tau", "")
+cat.corr <- cat.corr %>% gather(key)
+colnames(cat.corr) <- c("x", "y", "value")
+cat.corr %<>% as_tibble() %>%
+  separate(value, into = c("tau", "p.value"), sep = ":", convert = TRUE)
+```
+
+```{r, fig.wigth=6, fig.height=5, fig.cap="Concordance between service categories"}
+cat.corr %>%
+  filter(
+    p.value < 0.01
+  ) %>%
+  ggplot(
+    aes(
+      x = x,
+      y = factor(y, unique(y) %>% sort(decreasing = TRUE))
+    )
+  ) +
+  geom_tile(aes(
+    fill = tau
+  )) +
+  scale_fill_gradient(low = "white",  high = "steelblue") +
+  scale_x_discrete(expand = c(0, 0)) +
+  scale_y_discrete(expand = c(0, 0), position = "right") +
+  theme(
+    legend.position = "none",
+    text = element_text(family = "Avenir Next"),
+    axis.ticks = element_blank(),
+    axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)
+  ) +
+  labs(x = "", y = "")
+```
+
+This graph shows the ordinal association (Kendall's tau) for each pair of AIRS Problem/Need categories. The darker the blue, the more in agreement the two are--which means a neighborhood either have a high volumn of calls related to both, or low on both. Transparent tiles represent insignificant results, mostly because of low call volume. To minimize bias, ZIP codes with no call in either of the categories were removed before calculation.
+
+The most obvious correlated pairs are
+
+  - Art/Culture/Recreation + Clothing/Personal/Household Needs
+  - Employment + Volunteers/Donations
+  - Disaster Services + Volunteers/Donations
+  - Housing + Income Support (EEC)
+
+It is not immediately clear whether calls of different categories are from the same group of people or not and what do these correlations actually mean.
+We would need to dive deeper for each category and use the Taxonomy terms to boil things down.
+
+
+# Notes
+
+## Data Treatment
+
+This report is based on the raw iCarol reports; the data were manually cleaned and transformed, with a few noteworthy controls:
+
+1. Only regular Mass 211 calls are used^[ReportVersion = Mass 211]. "Call2Talk", "Runaway Form", and "Mass 211 Text", "Mass 211 Chat" were all ignored, the reason being that their number are small and they often contain incomplete or unique data fields, which means some separate analyses are more appropriate.
+2. Different data fields about the same information were merged into one. For example, "Data Collection - How did you Learn about Mass211" and "Caller Data - How Heard about Call2Talk?" are treated as one field.
+3. Some missing records of AIRS Problem/Needs categories were completed with inferences from the Taxonomy. E.g., "Target People -> Low Income" was mapped to "Income Support/Assistance".
+4. All call length values were increased by 0.4 minutes, because they were zero-based and sums of zeros would add biases into the "minutes per day" metric.
+
+## Service types
+
+[The Taxonomy](http://www.airs.org/i4a/pages/index.cfm?pageid=3386) provides a comprehensive and logical hieratic structure for human services, but this indexing method is not suitable for analysing and reporting purposes--end-level terms are too granular, and upper levels too broad and not self-explanatory.
+
+The [AIRS: I&R Problem/Needs National Categories](https://www.acallforhelp.info/cms6/files/os007/p46/AIRS%20ProblemNeeds%20definitions%202012.pdf)^[The linked document is outdated. It contains only 16 categories, but AIRS has [split](http://www.icarol.com/changes-to-airs-problemsneeds-categories/) "Housing/Utility" into two separate categories in 2014, making it 17 categories in our case.] as seen in the `MetUnmet` report is a better candidate for reporting, and was used in [the flow chart](#the-flow), but such categorization is also not revealing enough. For instance, "Income Support" does not reveal the fact that the overwhelmingly majority of this type of need is for Early Education and Care.
+
+The optimal solution for problem is to create a flat, topic-based categorization method that aligns with the unique demands of Massachusetts constituents. But curating such a list is a time-consuming process and would need vigorous validation. That is why I used AIRS Neet Categories for general analaysis, but Level 5 Taxonomy terms to reveal more details in call purposes. 
+
+# Conclusions and next steps
+
+This report presents the big picture of the state's human service needs based on the data from past year and created graphs and tools to explore some basic characteristics of current landscape.
+
+We have also identified three major demographic factors affecting the usage of 211: income, race and education attainment. The result is not so surprising, but a quantified predictive model could be a good starting point for future analysis. 
+
+EEC calls are a too large portion of the caseload and may have unfairly skewed the data and overshadowed other problems/needs. They seem to be a far less acute social problem. Maybe it would be a good idea to isolate them in the future.
+
+My next step would be to cross-validate the demands with more (external) data sources and start bringing other data fields into the picture: age, sex, military status, etc.
+
+But before doing that, building a simple and robust typology is still an unresolved major challenge. I have tried some name matching using Regular Expressions, but it did not work well for all cases. Another approach would be to hand pick a few terms from different levels of the Taxonomy and map them with specific topics we want to discuss--mental health and substance abuse, for example.
+
+
+# Questions
+
+1. Any comments on these discoveries? What else would you like to see me working on? Any specific questions you are seeking answers of?
+1. Are agency resources categorized in any way in the system? E.g., being tagged as Police, Municipality Service, Government Aide Program, Volunteer and Charity, Hospital, Shelters, etc. In the flow chart, I grouped the agencies using simple keywords matching with the names. Had we an official categorization method, the obscure "Other Agency" chunk would look much smaller.
+2. Is the typology used by 211counts.org known to you? Did they develop the whole thing by themselves or is it yet another shared categorization system just like the Taxonomy and AIRS Problem/Need Categories?
+3. Did the merging of Call2Talk and 211 change the way you work or how you keep logs of these calls?
+4. If I understood it correctly, the "ReferralsMade" column in `call_reports` is about which agencies the call were referred to. Some Call2Talk calls have the ReferralsMade as Call2Talk. Is it because this is a required field, and an internal referal was made as the default value? Or does this case have a special meaning?
+5. It seems the iCarol system also provides [some statistics](http://www.icarol.com/software-features/statistics-outcome-reporting/calls/). Can I have a screenshot of their charts or the list of features they have? So I won't be working on things you already have.
+5. May I have access to http://mass211.org/mass-211-stats/? It's password protected.
+
+
+```{r bib, include=FALSE}
+# create a bib file for the R packages used in this document
+knitr::write_bib(c('base', 'rmarkdown'), file = 'skeleton.bib')
+```
+
+```{r, eval=FALSE}
+rmarkdown::render("big-picture.Rmd")
+```
