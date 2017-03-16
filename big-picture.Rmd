@@ -297,7 +297,7 @@ leaflet(zip.geo.simple) %>%
 
 A multiple linear regression was calculated at the zip code level to predict the number of calls per 1,000 residents based on their income, race, and education level.
 
-I have chosen percentages of people who completed at least a Bachelor's degree , percentages of white people, and median house income measured in 1,000 US dollars  as the prediction variables. An interaction term "Race: White + Income" was also included to reveal any potential interaction between the effects of house income and race.
+I have chosen percentages of people who completed at least a Bachelor's degree , percentages of white people, and median house income measured in 1,000 US dollars  as the prediction variables. An interaction term "Race: White &times; Income" was also included to reveal any potential interaction between the effects of house income and race.
 
 ```{r, results='hide'}
 library("scales")
@@ -366,7 +366,7 @@ count.zip.clean %>%
     axis.title = element_text(size = 10))
 ```
 
-In above graph, the slope of the two lines indicate how much the change of income affects the change of calls. For ZIP codes with higher percentage of white residents, the absolute value of the slope is smaller. But this might also be related to the distribution of 
+In above graph, the slope of the two lines indicate how much the change of income affects the change of calls. For ZIP codes with higher percentage of white residents, the absolute value of the slope is smaller, indicating a smaller effect.
 
 ## Category correlations
 
