@@ -359,6 +359,7 @@ count.zip.clean %>%
     y = "calls per 1k ppl.",
     color = "White > 70%"
   ) +
+  ylim(0, 15) +
   theme(
     plot.background = element_rect(fill = "#fefefe", color = "#fefefe"),
     text = element_text(family = "Avenir Next"),
