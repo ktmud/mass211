@@ -6,5 +6,8 @@
 data/
 ref/
 tmp.*
+node_modules
 *.bib
+*.html
 .Rproj.user
+m2m

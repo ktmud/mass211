@@ -1,0 +1,143 @@
+---
+title: 'Mass 211: Establishing a Baseline for Human Service Demands'
+output:
+  html_notebook:
+    code_folding: hide
+    theme: cosmo
+    toc: yes
+  html_document:
+    toc: yes
+---
+
+<style>
+@media print {
+  .code-folding-btn { display: none; }
+  #header .btn-group { display: none; }
+}
+.small-pic {
+  width: 50%;
+}
+</style>
+
+## Regression Model Recap
+
+In our previous regression model, we identified income, race and education attainment as the strongest variables in predicting number of 211 calls per capita.
+
+```{r}
+knitr::opts_chunk$set(
+  echo = FALSE,
+  message = FALSE, warning = FALSE
+)
+```
+
+```{r, echo = FALSE}
+FitSummary1 <- function(dat) {
+  fit <- lm(p.call.s ~ MedHouseIncome.s + AtLeastBachelor.s + White.s, dat)
+  summary(fit)
+}
+FitSummary1(count.zip)
+```
+
+To simplify the analysis, I have removed the interactive variable between education attainment and race. Each variable were also standarized (changed to how much an observation is different from the mean), so to make the numbers more readable.
+
+The conclusion was that Black population with lower income and less education are more likely to make 211 calls. This is true at both the zip code and the city/town level.
+
+## Urban vs Rural
+
+To answer the question of whether there are differen behaviors between residents in rural and urban areas, I used the [Urban Area to ZIP Code Tabulation Area Relationship Data](https://www.census.gov/geo/maps-data/data/ua_rel_download.html) to calculate percentage of urban population in each zip code.
+
+```{r, echo=FALSE, fig.width = 5, fig.height = 2.5, fig.retina=2}
+library(tidyr)
+
+PlotACIGrid <- function(dat) {
+  # dat %>% summarize(total_urban_pop = sum(p.urbanpop * TotalPop) / sum(TotalPop))
+  dat %<>% na.omit()
+  dat.flat <- dat %>%
+    select(zip, BelowPoverty.s, AtLeastBachelor.s, Black.s,
+           MedHouseIncome.s, UnempRate.s, White.s) %>% 
+    gather(variable, sd, -zip) %>%
+    left_join(select(dat, zip, p.call.s, UrbanPop), by = "zip")
+  
+  ggplot(dat.flat, aes(sd, p.call.s)) +
+    geom_point(size = 0.6, aes(color = UrbanPop), shape = 1, alpha = .5) +
+    geom_smooth(size = 0.5, method = lm) +
+    facet_wrap(~ variable, scales = "free_x") +
+    scale_y_continuous(limits = c(min(dat$p.call.s), 4)) +
+    # scale_x_continuous(limits = c(-2, 2)) +
+    labs(title = "Demographics and Number of Calls Per 1,000 People",
+         subtitle = "ZIP code level | during 2015.5 ~ 2017.2",
+         x = "standard deviation",
+         y = "calls per 1,000 ppl. (sd)",
+         color = "Urban Population")
+}
+
+PlotACIGrid(count.zip)
+```
+
+Above graph shows how each demographic characteristic interacts with number of 211 calls, with the color of the dots indicating whether a zip code is considered urban (with more than 90% of the population reside in an urban area), rural (less than 10% people reside in an urban area), or mixed.
+
+If we build a single variable regression model with only urban population percentage, we get a low p-value, but also a very low $R^2$, indicating that rural residents do make less 211 calls, but linear models in this case could not explain most obvervations, since almost all residents (more than 92%) in Massachussets live in urba areas (as defined by the Census Bureau).
+
+```{r}
+fit <- lm(p.call ~ p.urbanpop, count.zip)
+summary(fit)
+```
+
+<div style="width: 80%">
+```{r, echo = FALSE, fig.width=4, fig.height=2, fig.retina=2}
+ggplot(count.zip %>% na.omit(), aes(p.urbanpop, p.call)) +
+  geom_point(size = 0.6, shape = 1, alpha = .5, aes(color = UrbanPop)) +
+  geom_smooth(size = 0.5, method = lm) +
+  labs(x = "Urban population percentage (%)", y = "Calls per 1,000 people")
+```
+</div>
+
+
+## Data Representation without EEC^[Early Education and Care Programs] Calls
+
+When removed calls related to EEC programs (Taxonomy Code: NL-3000.1500),
+the results are not that much different.
+
+```{r}
+FitSummary1(count.zip.no.eec)
+```
+
+```{r, echo=FALSE, fig.width = 5, fig.height = 2.5, fig.retina=2}
+PlotACIGrid(count.zip.no.eec)
+```
+
+The correlation signal in median house income becomes slightly weaker, suggesting that people in need of Child Care Expense support might live in an even poorer neighborhood than an average 211 user.
+
+## Rediduals
+
+Perhaps what is more interesting is the difference between an area's predicted number of calls and the actuall call volume, which is reflected by the rediduals in the linear regression model.
+
+```{r, echo=FALSE, fig.width = 5, fig.height = 1.6, fig.retina=2}
+library(broom)
+
+dat <- count.town
+dat$id <- dat$town
+fit <- lm(p.call.s ~ MedHouseIncome.s + AtLeastBachelor.s + White.s, dat)
+dat$predicted <- predict(fit)
+dat$residuals <- residuals(fit)
+
+d <- dat %>%
+  select(id, predicted, residuals,
+         AtLeastBachelor.s, MedHouseIncome.s, White.s) %>% 
+  gather(key = "iv", value = "x", -id, -predicted, -residuals) %>%
+  left_join(select(dat, id, p.call.s), by = "id")
+
+ggplot(d, aes(x = x, y = p.call.s)) +
+  geom_segment(aes(xend = x, yend = predicted), alpha = .2) +
+  geom_point(aes(color = residuals), size = 0.8) +
+  scale_color_gradient2(low = "blue", mid = "white", high = "red") +
+  guides(color = FALSE) +
+  geom_point(aes(y = predicted), size = 0.8, shape = 1, color = "grey10") +
+  facet_grid(~ iv, scales = "free_x") +  # Split panels here by `iv`
+  theme_bw() +
+  labs(title = "Regression Residuals", x = NULL)
+```
+
+Above graph shows the residuals (the differences between the predicted values and the actual values) of our multivariable regression model. The white circles are the predicted data and the colored points are the predicted data. Red indicated higher than predicted, blue indicated lower than predicted.
+
+The next step would be to plot these residuals on a map, so to get an intuitive picture of where the demands are the most different than the predictions.

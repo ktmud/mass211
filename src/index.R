@@ -1,22 +1,12 @@
 library(plyr)
-library(magrittr)
-library(dplyr)
 library(tidyverse)
+library(magrittr)
 library(stringr)
 library(readxl)
 library(xml2)
-library(data.tree)
+# library(data.tree)
+library(forcats)
 
-if (!exists("mass211.raw")) {
-  mass211.raw <- read_csv("data/211/mass211.csv")
-}
-m <- mass211.raw
-
-source("src/solidify.R")
-source("src/clean_raw.R")
-source("src/prepare.R")
-source("src/metrics.R")
-source("src/treemap.R")
-#source("src/cats.R")
-source("src/map.R")
-
+source('src/clean/simple.R')
+source('src/transform/count_geo.R')
+source('src/map/index.R')

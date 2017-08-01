@@ -1,0 +1,11 @@
+---
+title: "Mass 211: Model Selection"
+output: html_notebook
+---
+
+## Public Health
+
+```{r}
+dat <- town.geo@data
+
+```
