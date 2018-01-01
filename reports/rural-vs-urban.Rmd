@@ -1,0 +1,437 @@
+---
+title: 'Mass 211: Rural vs Urban - An In-Depth Look'
+output:
+  html_notebook:
+    code_folding: hide
+    theme: cerulean
+---
+
+<style>
+p img {
+  max-width: 80%;
+  margin: 0 auto;
+  display: block;
+}
+</style>
+
+
+In this notebook, I attempt to look deeper into human services needs of rural vs urban areas.
+
+Some premises:
+
+1. This analysis is done at the ZIP code level.
+3. 2-1-1 calls are categorized into specific topics, namely: `r unique(count.cat.zip$topic)`. They cover about 90% of all the calls--i.e., 90% of the calls can be categorized under one or more such topics.
+4. There might be overlaps in these topics--for example, _housing_ would contain _homeless_, but calls for housing issues might not always be related to homeless people. 
+5. Calls to "Mental Health Hotlines" (Taxonmy code: RP-1500.1400-500) <!-- and "Suicide Prevention Hotlines" (Taxonomy code: RP-1500.1400-800) --> are removed, as they are prone to skewness caused by repetitive callers.
+
+This is how the aggregated data looks like:
+
+```{r}
+zip_area <- ztc %>%
+  group_by(zip) %>%
+  summarise(
+    # zt_area stands for "zip in town areas",
+    # and are in square miles,
+    # here we calculate the total area of each zip code
+    area = sum(zt_area)
+  )
+dat <- count.cat.zip %>%
+  mutate(
+    zip = as.character(name),
+    # each type of calls account for how many percentage of all calls in this geo unit
+    n_scaled_per_geo = n / n_geo_total,
+    p_1k = n / TotalPop * 1000
+  ) %>%
+  left_join(zip_area, by='zip') %>%
+  mutate(
+    PopDen = TotalPop / area
+  ) %>%
+  select(-zip, -n_scaled_per_geo) %>%
+  filter(!is.na(PopDen))
+head(dat, 20)
+```
+
+## Removal of extreme values
+
+First, let's examine the distribution of the number of calls per 1,000 people--the variable we will use for future analysis.
+
+```{r}
+quantile(dat$p_1k, probs=seq(0,1,0.2))
+dat %>% ggplot(aes(p_1k)) +
+  geom_histogram(bins=100) +
+  labs(x = '# calls per 1,000 people')
+```
+
+The vast majority of the observations (combination of a ZIP code and a service type) do not have any calls at all. As per-capita representation of small counts is very sensitive to the denominator, we would want to set a threshold for the minimal number of residents, so to avoid being trapped by "incidental" calls from these neighborhoods.
+
+```{r}
+dat %>%
+  filter(p_1k > 5) %>%
+  arrange(TotalPop) %>%
+  select(name, topic, n, TotalPop, p_1k)
+```
+
+We can see that population with near 200 people is still generating indidental calls (# of calls < 3). In order to be consistent, I am removing ZIP codes with less than 200 people for all service categories.
+
+```{r}
+dat2 <- dat %>% filter(TotalPop > 200)
+nrow(dat2) / nrow(dat)
+```
+
+This accounts for about 1% of all observations--we still have 99% of the data.
+
+## Definition of Urban Areas
+
+The U.S. Census Bureau defines an urban area as: "Core census block groups or blocks that have a population density of at least 1,000 people per square mile (386 per square kilometer) and surrounding census blocks that have an overall density of at least 500 people per square mile (193 per square kilometer)."[^1] Areas with less than 50,000 people are called _urban clusters_, while those with more than 50,000 people are called urbanized areas.
+
+Since we do not have exact coordinate of the callers to map them to census blocks, we simply apply the same density definition to the ZIP code areas.
+
+Slightly less than half of all ZIP codes met the density requirement. The example values and the distribution are as follows:
+
+```{r}
+# >1,000 people/sqmi is urban areas
+dat2 %<>% mutate(is_urban = PopDen > 1000)
+uniq.areas <- dat2 %>%
+  select(name, PopDen, TotalPop, area, is_urban) %>%
+  distinct() %>%
+  arrange(-PopDen)
+uniq.areas %>% filter(is_urban)
+```
+
+
+```{r}
+dat2 %>%
+  distinct(zip, PopDen) %>%
+  ggplot(aes(PopDen)) +
+  geom_histogram(bins=60) +
+  xlim(c(0, 20000))
+```
+
+
+```{r}
+urban.cutoff <- nrow(uniq.areas) - nrow(uniq.areas %>% filter(is_urban))
+dat2 %>%
+  # order Y axis (the ZIP code areas) by population density
+  # Fill with log number of calls per 1000 people
+  Heatmap1(topic, fct_reorder(name, PopDen), log(p_1k)) +
+  labs(
+    title = 'Log # of calls per 1,000 people for each ZIP Code and topic',
+    y = NULL, fill='log(#/1k)'
+  ) +
+  annotate(
+    'text',
+    label = 'Population Density > 1,000/sqmi',
+    color = 'white',
+    x = 4.2,
+    y = urban.cutoff + 40
+  ) +
+  annotate(
+    'text',
+    label = 'Population Density < 1,000/sqmi',
+    color = 'gray90',
+    x = 4.2,
+    y = urban.cutoff - 40
+  ) +
+  theme(
+    axis.text.y=element_blank(),
+    axis.ticks.y=element_blank(),
+    axis.text.x = element_text(angle = 75, hjust = 1)
+  ) +
+  geom_hline(yintercept = urban.cutoff, color='red', size=0.5, linetype='dashed')
+```
+
+In this heatmap, each tile represents the log number of calls to one of the topics from a ZIP code area. The ZIP codes are ordered along the Y axis based on population density. More densely populated areas appear at the top of the graph. The X axis is sorted by the total number of calls for that topic.
+
+While not obvious, it does seem that densely populated urban areas tend to generate more calls for the most popular types of services (brigher yellow color at the top right corner). It also appears that the most sparsely populated areas generate more utilities and legal related requests.
+
+### Define urban areas by population only
+
+Considering the size of ZIP code areas varies and they are in general delineated with population clustering in mind, we may also try to use just the total population as the indicator for urbanness.
+
+```{r}
+popden <- unique(dat2$PopDen)
+dat2 %>%
+  # order Y axis (the ZIP code areas) by population density
+  # Fill with log number of calls per 1000 people
+  Heatmap1(topic, fct_reorder(name, TotalPop), log(p_1k)) +
+  labs(y = 'total population', fill='log(#/1k)') +
+  theme(
+    axis.text.y=element_blank(),
+    axis.ticks.y=element_blank(),
+    axis.text.x = element_text(angle = 75, hjust = 1)
+  )
+```
+
+It is obvious that ZIP codes with small population have larger probability of not getting any calls at all (the gray tiles) and they have also a larger variance in the per capital number of calls data. Both facts are not really surprising.
+
+### Zoom-in
+
+What is more interesting is the "dent" near the top of the graph (ZIP codes with larger population). We can zoom in the graph and find out what are those exactly.
+
+```{r, fig.height=3, fig.width=5}
+dat3 <- dat2 %>%
+  mutate(
+    # `name` is the ZIP code
+    name = fct_reorder(name, TotalPop)
+  ) %>%
+  filter(
+    TotalPop > quantile(TotalPop, 0.85),
+    TotalPop < quantile(TotalPop, 0.9)
+  )
+dat3 %>%
+  Heatmap1(topic, name, log(p_1k)) +
+  labs(y = 'total population', fill='log(#/1k)') +
+  theme(
+    axis.text.x = element_text(angle = 75, hjust = 1)
+  )
+```
+
+```{r}
+dat3 %>%
+  select(zip=name, TotalPop, PopDen) %>%
+  mutate(zip = as.character(zip)) %>%
+  distinct() %>%
+  arrange(-TotalPop) %>%
+  left_join(ztc, by='zip')
+```
+
+Those with relatively low demand:
+
+- 01851, 01854 - UMass Lowell, where most of the residents are on-campus college students.
+- **01002** - UMass Amerst campus
+- **01876** - The Town of Tewksbury, suburb of the City of Lowell.
+- **01930** - The Town of Gloucester, a relative remote area at the northeastern corner of MA, 94% white.
+- **01845** - Residential area near the Phillips Academy.
+- **02446** - The northern part of Brookline, median house income 80k. 72% white, 38% of the residents are of age 18-34.
+- 02453 - The City of Waltham, encompasses the campus of Brandeis University and residential area near Bentley University.
+- 02062 - The Town of Nordwood, 82% white, median house income 80k.
+- 01757 - The Town of Milford, median income 70k, 80% white, 8% in poverty.
+- 02115 - The campus of Northeastern University.
+- 02132 - West Roxbury, 80% white, median house income 88k.
+
+Those with high demand from this graph are:
+
+- 01109 - Eastern part of Springfield, encompasses Old Hill, Bay and Upper Hill neighborhood. 37% hispanics, 14% Purto Ricans, 37% black, median house income 34k.
+- 01605 - Worchester, neighborhoods around Gree Hill Park, near the campus of Worchester Polytechnic Institute and UMass Medical School.
+- 02121 - Roxbury, Boston, predominantly black and hispanic neighborhood, median house income 26k
+- 02126 - Mattapan, Boston, predominantly black neighborhood, median house income 46k
+
+Most of the neighborhoods with a large population but low human service demands are university towns or redidential areas near a university, where the population are young and mostly non-local.
+
+We can zoom in to the neighborhoods with small population, too:
+
+```{r, fig.height=4, fig.width=5}
+dat4 <- dat2 %>%
+  mutate(
+    # `name` is the ZIP code
+    name = fct_reorder(name, TotalPop)
+  ) %>%
+  filter(
+    TotalPop < quantile(TotalPop, 0.09)
+  )
+dat4 %>%
+  Heatmap1(topic, name, log(p_1k)) +
+  labs(y = 'total population', fill='log(#/1k)') +
+  theme(
+    axis.text.x = element_text(angle = 75, hjust = 1)
+  )
+```
+
+```{r}
+dat4 %>%
+  select(zip=name, TotalPop, PopDen) %>%
+  distinct() %>%
+  mutate(zip = as.character(zip)) %>%
+  arrange(TotalPop) %>%
+  left_join(ztc, by='zip')
+```
+
+- 02553 - A very small fraction of Bourne, not actually a sparsely populated area per se, has a small population only because small land size.
+- 01092 - A small area at West Warren.
+- 01901 - A small fraction of Lynn around the Central Square, population 1,371, 39.4% are foreign born (14% are naturalized citizen) and 38% are hispanics. The neighboring ZIP code 01902 also have a fair amount of hispanics and high demand in 2-1-1 services, especially about child care.
+- 02558 - Onset, a small town in Cape Cod. 78% white, 58% female, 42% age 45-54, Median house income 43k, near a country club.
+
+### The official urban areas
+
+The official [Urban Area Relathinship Files](https://www.census.gov/geo/maps-data/data/ua_rel_download.html) published by the Census Bureau maps ZIP code and other geographic areas to urbanized areas and urban clusters. It is possible to calculate how many percentage of population and housing units in a ZIP code are within urban areas.
+
+```{r}
+dat5 <- dat2 %>%
+  left_join(zip.urbanpop, by='zip') %>%
+  mutate(is_urban = p.urbanized_pop > 90)
+head(dat5, 20)
+uniq.areas <- dat5 %>%
+  select(name, PopDen, p.urbanized_pop, is_urban, p.urban_pop, p.urban_cluster_pop) %>%
+  distinct() %>%
+  arrange(-PopDen)
+```
+
+```{r, fig.width=4, fig.asp=0.5}
+uniq.areas %>% ggplot(aes(p.urbanized_pop)) + geom_histogram(bins=100)
+```
+
+Nearly half of the ZIP code areas are located in urban areas 100%.
+
+```{r}
+urban.cutoff <- nrow(uniq.areas) - nrow(uniq.areas %>% filter(is_urban))
+dat5 %>%
+  mutate(
+    name = fct_reorder(
+      name,
+      if_else(p.urbanized_pop == 100, p.urban_pop + log(1 + urban_popden), p.urban_pop)),
+    .desc=TRUE
+  ) %>%
+  # filter(p.urban_pop < 90) %>%
+  # order Y axis (the ZIP code areas) by population density
+  # Fill with log number of calls per 1000 people
+  Heatmap1(topic, name, log(p_1k)) +
+  labs(
+    title = 'Log # of calls per 1,000 people for each ZIP Code and topic',
+    y = NULL, fill='log(#/1k)'
+  ) +
+  annotate(
+    'text',
+    label = '% living in Urbanized Areas > 90%',
+    color = 'white',
+    x = 4.2,
+    y = urban.cutoff + 40
+  ) +
+  annotate(
+    'text',
+    label = '% living in Urbanized Areas < 90%',
+    color = 'gray90',
+    x = 4.2,
+    y = urban.cutoff - 40
+  ) +
+  theme(
+    axis.text.y=element_blank(),
+    axis.ticks.y=element_blank(),
+    axis.text.x = element_text(angle = 75, hjust = 1)
+  ) +
+  geom_hline(yintercept = urban.cutoff, color='red', size=0.5, linetype='dashed')
+```
+
+The heatmap is not that different than what we get based on naive population density, but does show a stronger signal in terms of high density urban areas generating more calls. We could also see suburban areas (those near the red dashed line) seem to be generating a relatively higher amount of health and disiability related calls.
+
+## Topic correlations with Rural vs Urban
+
+We would like to examine the correlation between each type of calls.
+
+```{r, fig.width=5, fig.height=4}
+library(tidyr)
+library(corrplot)
+
+dat6 <- dat5 %>%
+  select(-n_topic_total, -n, -n_scaled_per_geo) %>%
+  spread(topic, p_1k)
+
+plot_corr <- function(dat, title) {
+  res1 <- cor.mtest(dat, conf.level=.99)
+  dat %>%
+    cor(method='kendall') %>%
+    corrplot(method="shade", order="FPC",
+             title=title, p.mat=res1$p,
+             sig.level=.2, cl.lim=c(0,1),
+             mar=c(0,0,2,0))
+}
+dat6 %>%
+  select(`care/companion`:childcare) %>%
+  plot_corr(title="Correlation of calls (Global)")
+```
+
+```{r, fig.width=5, fig.height=4}
+dat6 %>%
+  filter(is_urban) %>%
+  select(`care/companion`:childcare) %>%
+  plot_corr(title="Correlation of calls (Urban Areas)")
+```
+(for some reason, the order of the strongest compoents for this graph is flipped, and I still haven't figure out why...)
+
+```{r, fig.width=5, fig.height=4}
+dat6 %>%
+  filter(!is_urban) %>%
+  select(`care/companion`:childcare) %>%
+  plot_corr(title="Correlation of calls (Rural Areas)")
+```
+
+Above graphs shows the correlation between pairs of per capita call counts for each topic, using the Kendal's Tau method. The topics are ordered with the First Principle Component order. Squares with "X" means the correlation is not statistically significant (p-value > 0.01)
+
+The fact that housing is always ranked as the strongest principle component indicates that housing issue might be a good predictor of the general needs of other service types.
+
+## Correlation between resource density and calls
+
+We may also examine the correlation between number of resources available v.s. number of calls of given service type.
+
+For simplicity, this initial analysis calculates the number of resources available for each municipality and service type, then allocate those resources to every ZIP code associated with that municipality. I.e., every ZIP in Boston will have access to every resource located in Boston. In case of a ZIP code overlaps with two or more municipalities, we will consider the ZIP code have access to resources in all overlapping municipalities.
+
+To get a more robust result, we may need to take proximity into account in the future.
+
+```{r, message=FALSE, warning=FALSE}
+dat7 <- select(count.resource, zip, topic, n_resource = n) %>%
+  right_join(dat %>% select(zip = name, topic, n_call = n), by=c('zip', 'topic')) %>%
+  mutate(
+    n_resource = if_else(is.na(n_resource), 0L, n_resource),
+    n_call = if_else(is.na(n_call), 0L, n_call)
+  ) 
+
+topic_names <- unique(dat7$topic)
+
+# returns a list
+# each list item is the correlation coefficients for
+# every resource type to each call type
+topic_corr <- map(topic_names, function(x) {
+  # compute correlation between each type of resource to each type of calls
+  n_resource <- dat7 %>% filter(topic == x) %>% .$n_resource
+  ret <- map_dbl(topic_names, function(y) {
+    n_call <- dat7 %>% filter(topic == y) %>% .$n_call
+    cor(n_resource, n_call, method='kendal')
+  })
+  names(ret) <- topic_names
+  ret
+})
+names(topic_corr) <- topic_names
+```
+
+```{r}
+dat7 %>%
+  select(-topic) %>%
+  gather('var', 'n', -zip) %>%
+  ggplot() +
+  geom_histogram(aes(x=n, fill=var), bins=100) +
+  xlim(c(0, 100)) + ylim(c(0,2500)) +
+  labs(title='Distribution of Resource and Call Counts For ZIP + Topic')
+```
+
+
+```{r}
+normalize <- function (x) {
+  (x-min(x))/(max(x)-min(x))
+}
+dat9 <- topic_corr %>%
+  # now each column is each resource type
+  as_tibble() %>%
+  normalize() %>%
+  mutate(
+    # each row is each call type
+    call_topic = topic_names
+  ) %>%
+  gather("resource", "tau", -call_topic)
+dat9 %>% ggplot() +
+  geom_tile(aes(resource, call_topic, fill=tau)) +
+  scale_fill_continuous(low='white', high='blue') +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  )
+```
+
+It seems that those more resourceful neighborhoods do make more calls, and it is especially true for info service, homeless, housing, community, and child care related calls.
+
+## Conclusion
+
+- Urban areas do get more calls than rural areas, especially in child care and housing.
+- University campuses are a totally different story.
+- Housing predicts all other types of services.
+- Resourceful neighborhoods do make more calls.
+
+
+[^1]: https://www2.census.gov/geo/pdfs/reference/GARM/Ch12GARM.pdf]

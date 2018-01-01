@@ -31,11 +31,145 @@ knitr::opts_chunk$set(
 ```
 
 ```{r, echo = FALSE}
-FitSummary1 <- function(dat) {
-  fit <- lm(p.call.s ~ MedHouseIncome.s + AtLeastBachelor.s + White.s, dat)
-  summary(fit)
-}
+fit <- lm(p_call ~ MedHouseValue + MedHouseIncome + AtLeastBachelor + Black + Hispanic, count.zip)
 FitSummary1(count.zip)
+```
+
+```{r, message=FALSE}
+library(stargazer)
+
+stargazer(fit, type='html', out='tmp.html')
+```
+```{r}
+dat2 <- count.zip %>%
+  filter(
+    p_call > 0
+  ) %>%
+  distinct() %>%
+  mutate(
+    MedHouseValue = MedHouseValue / 1000,
+    MedHouseIncome = MedHouseIncome / 1000,
+    log_p_call = log(p_call * 10)
+  )
+```
+
+
+```{r}
+dat <- zip.geo@data %>%
+  filter(
+    TotalPop > 100
+  ) %>%
+  distinct() %>%
+  mutate(
+    # impute with median
+    MedHouseValue = if_else(is.na(MedHouseValue), median(MedHouseValue, na.rm=T), MedHouseValue),
+    MedHouseValue = MedHouseValue / 1000,
+    MedHouseIncome = if_else(is.na(MedHouseIncome), median(MedHouseIncome, na.rm=T), MedHouseIncome),
+    MedHouseIncome = MedHouseIncome / 1000,
+    log_p_call = log(p_call * 10 + 1)
+  )
+```
+```{r}
+fit.ols <- lm(p_call ~ MedHouseIncome + AtLeastBachelor + Black + Hispanic, data=dat)
+summary(fit.ols)
+tmp <- stargazer(fit.ols, type='html', out='ols_default.html')
+```
+
+```{r}
+fit.ols2 <- update(fit.ols, . ~ . + HI_PrivateInsured)
+tmp <- stargazer(fit.ols2, type='html', out='ols2.html')
+```
+
+```{r}
+fit.ols1 <- lm(p_call ~ MedHouseIncome + Black, data=dat)
+fit.ols2 <- update(fit.ols1, . ~ . + Hispanic)
+fit.ols3 <- update(fit.ols2, . ~ . + HI_PrivateInsured)
+fit.ols4 <- update(fit.ols3, . ~ . + MedHouseValue)
+fit.ols5 <- update(fit.ols4, . ~ . + p.urbanized_pop)
+fit.ols6 <- update(fit.ols5, . ~ . + AtLeastBachelor)
+fit.anova <- anova(fit.ols1, fit.ols2, fit.ols3, fit.ols4, fit.ols5, fit.ols6, test="Chisq")
+fit.anova %>% broom::tidy()
+fit.anova
+```
+
+```{r}
+fit <- lm(p_call ~ HI_PrivateInsured + Black + p.urbanized_pop, data=dat)
+summary(fit)
+```
+
+```{r}
+summary(m2 <- MASS::glm.nb(
+  n_call ~ White + 
+    MedHouseValue +
+    MedHouseIncome +
+    OwnerOccupied +
+    HH_LiveAlone +
+    HH_SingleHead +
+    # HI_PrivateInsured +
+    AtLeastBachelor +
+    PopDen +
+    offset(log(TotalPop)),
+  data = dat))
+```
+
+```{r}
+
+```
+
+
+```{r}
+library(stargazer)
+
+stargazer(fit, type='html', out='tmp.html')
+```
+
+```{r}
+library(caret)
+```
+
+```{r}
+rfe_sizes <- c(2, 4, 8, 10, 13, 15, 20, 25, 30, 40)
+ctrl <- rfeControl(functions = lmFuncs,
+                   # resampling methods: bootstrap
+                   method = "boot",
+                   number = 200,
+                   verbose = FALSE)
+ctrl2 <- rfeControl(functions = lmFuncs,
+                   # resampling methods: bootstrap
+                   method = "boot",
+                   rerank = TRUE,
+                   number = 200,
+                   verbose = FALSE)
+x <- dat %>%
+  select(
+    -name,
+    -town, -county, -pa_name, -shape_area,
+    -residual, -log_p_call,
+    -starts_with('n_call'),
+    -starts_with('p_call'),
+    -ends_with('_land'),
+    -TotalPop,
+    # -contains('p.urban'),
+    # -urban_popden,
+    # -HSGrad, -SomeColl,
+    # -Bach, -Master, -Prof, -Doc,
+    # -BelowPovertyMarried,
+    # -BelowPovertyOccupied,
+    # -pop_den,
+    -total_pop
+  )
+y <- dat$p_call
+
+# must use scaled values for linear regressions
+lmProfile <- rfe(x, y, sizes = rfe_sizes, rfeControl = ctrl)
+lmProfile2 <- rfe(x, y, sizes = rfe_sizes, rfeControl = ctrl2)
+lmProfile
+```
+```{r}
+xyplot(lmProfile$results$RMSE + lmProfile2$results$RMSE  ~
+       lmProfile$results$Variables,
+       type = c("g", "p", "l"),
+       auto.key = TRUE)
 ```
 
 To simplify the analysis, I have removed the interactive variable between education attainment and race. Each variable were also standarized (changed to how much an observation is different from the mean), so to make the numbers more readable.
@@ -51,27 +185,30 @@ library(tidyr)
 
 PlotACIGrid <- function(dat) {
   # dat %>% summarize(total_urban_pop = sum(p.urbanpop * TotalPop) / sum(TotalPop))
-  dat %<>% na.omit()
+  dat %<>% na.omit() %>%
+    mutate(
+      MedHouseIncome = MedHouseIncome / 1000
+    )
   dat.flat <- dat %>%
-    select(zip, BelowPoverty.s, AtLeastBachelor.s, Black.s,
-           MedHouseIncome.s, UnempRate.s, White.s) %>% 
-    gather(variable, sd, -zip) %>%
-    left_join(select(dat, zip, p.call.s, UrbanPop), by = "zip")
+    select(name, BelowPoverty, AtLeastBachelor, Black,
+           MedHouseIncome, UnempRate, White) %>% 
+    gather(variable, sd, -name) %>%
+    left_join(select(dat, name, p_call, p.urban_pop), by = "name")
   
-  ggplot(dat.flat, aes(sd, p.call.s)) +
-    geom_point(size = 0.6, aes(color = UrbanPop), shape = 1, alpha = .5) +
+  ggplot(dat.flat, aes(sd, p_call)) +
+    geom_point(size = 0.6, aes(color = p.urban_pop), shape = 1, alpha = .5) +
     geom_smooth(size = 0.5, method = lm) +
     facet_wrap(~ variable, scales = "free_x") +
-    scale_y_continuous(limits = c(min(dat$p.call.s), 4)) +
+    scale_y_continuous(limits = c(min(dat$p_call), 4)) +
     # scale_x_continuous(limits = c(-2, 2)) +
     labs(title = "Demographics and Number of Calls Per 1,000 People",
-         subtitle = "ZIP code level | during 2015.5 ~ 2017.2",
+         subtitle = "ZIP code level",
          x = "standard deviation",
          y = "calls per 1,000 ppl. (sd)",
          color = "Urban Population")
 }
 
-PlotACIGrid(count.zip)
+PlotACIGrid(dat)
 ```
 
 Above graph shows how each demographic characteristic interacts with number of 211 calls, with the color of the dots indicating whether a zip code is considered urban (with more than 90% of the population reside in an urban area), rural (less than 10% people reside in an urban area), or mixed.

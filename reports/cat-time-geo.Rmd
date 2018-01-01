@@ -1,0 +1,179 @@
+---
+title: "Health and Human Service Demands Across Space and Time"
+output:
+  html_notebook:
+    code_folding: hide
+    theme: readable
+  pdf_document: default
+---
+
+<style>
+img {
+    image-rendering: -webkit-optimize-contrast;
+}
+</style>
+
+This report illustrates the longitudinal and geographical fluctuation of different types of demands.
+
+Service types are grouped by _topics_, which are based on assigning a few selected popular taxonomy term into broader categories. These topics cover around 80% of all the calls. Then I count number of calls for each topic, month and county.
+
+## Longitudinal Trends
+
+To analyze longitudinal trends, I used the simple format iCarol dataset in combination of the archived taxonomy data for the years before 2016.
+
+```{r, fig.width=7, fig.height=2, fig.retina=2, message=FALSE}
+library(ggplot2)
+library(cowplot)
+library(lubridate)
+library(stringr)
+
+source('../src/transform/count_cat_geo.R')
+
+mcalls2 <- mcalls %>%
+  filter(# date >= ymd('2016-05-01'),
+         #date < ymd('2016-06-01'),
+         #date < ymd('2017-02-01'),
+         !is.na(cat.code)) %>%
+  mutate(
+    yearmonth = str_c(year(date), str_pad(month(date), 2, 'left', '0'), sep='-')
+  )
+
+dat1 <- mcalls2 %>%
+  count(yearmonth, topic) %>%
+  na.omit()
+
+dat2 <- mcalls2 %>%
+  count(topic) %>%
+  rename(n_total = n)
+
+dat <- dat1 %>%
+  left_join(dat2, by = 'topic') %>%
+  mutate(
+    topic = fct_reorder(topic, n_total),
+    n_scaled = n / n_total
+  )
+  
+Heatmap1(dat, yearmonth, topic, log(n))
+```
+
+But there was a period the calls are not recorded with taxonomy code, but rather free-text topics. Using some text matching techniques, I recovered some of them, but could not recover all (above graph clearly shows that between August 2014 and April 2016, some data are missing). Mass211 might or might not be able to provide us a more complete set of data. For now, we'll focus on the new format data exportable from the new system.
+
+```{r, fig.width=7, fig.height=2, fig.retina=2, message=FALSE}
+library(ggplot2)
+library(cowplot)
+library(lubridate)
+library(stringr)
+
+source('../src/transform/count_cat_geo.R')
+
+mcalls1 <- mcalls.full %>%
+  filter(date >= ymd('2016-05-01'),
+         #date < ymd('2016-06-01'),
+         #date < ymd('2017-02-01'),
+         !is.na(cat.code)) %>%
+  mutate(
+    yearmonth = str_c(year(date), str_pad(month(date), 2, 'left', '0'), sep='-')
+  )
+
+dat1 <- mcalls1 %>%
+  count(yearmonth, topic) %>%
+  na.omit()
+
+dat2 <- mcalls1 %>%
+  count(topic) %>%
+  rename(n_total = n)
+
+dat <- dat1 %>%
+  left_join(dat2, by = 'topic') %>%
+  mutate(
+    topic = fct_reorder(topic, n_total),
+    n_scaled = n / n_total
+  )
+  
+p1 <- Heatmap1(dat, yearmonth, topic, log(n))
+p2 <- Heatmap1(dat, yearmonth, topic, n_scaled)
+
+plot_grid(p1, p2)
+```
+
+Above graph shows how number of calls for each service category changes over time. Since number of calls varies a lot across categories, `log(n)` is used to make the graph more revealing. The graph on the right scales the numbers of each category by the total number of that category over the whole 14 month period.
+
+It is immediately obvious that there is a sharp increase in mental health related calls beginning the end of 2016. This is because United Way's Mental Health Line merged with Mass 2-1-1 around that time.
+
+It can be verified by examing the taxonomy terms under the "mental health" topic:
+
+```{r, fig.width=6, fig.height=2.5, fig.retina=2}
+mcalls.mental <- mcalls1 %>% filter(topic == 'mental')
+dat1 <- mcalls.mental %>%
+  count(cat.name, yearmonth)
+dat2 <- mcalls.mental %>%
+  count(cat.name, sort=TRUE) %>%
+  # total in all months
+  rename(n_total = n) %>%
+  head(10)
+
+dat <- dat1 %>%
+  right_join(dat2, by = 'cat.name') %>%
+  mutate(n_scaled = n / n_total) %>%
+  mutate(
+    cat.name = str_trunc(cat.name, 30) %>% fct_reorder(n_total)
+  )
+
+Heatmap1(dat, yearmonth, cat.name, n) +
+  labs(x = 'call date', y = 'taxonomy')
+```
+
+While there are calls to the "Mental Health Hotline" (or, "Call2Talk"" as branded by United Way) before the merge, and these calls are recorded in the same system, it is only after the merge that we see a huge increase in the usage of this service. This might be related to the increased awareness 2-1-1 during the merge, or simply because 2-1-1 is an easier-to-remember number.
+
+It is fair to say the broad usage of Call2Talk may have overshadowed some more serious mental health issues. If we remove Call2Talk calls:
+
+```{r, fig.width=6, fig.height=2.5, out.width='50%', fig.retina=2}
+dat %<>% filter(cat.name != 'Mental Health Hotlines')
+Heatmap1(dat, yearmonth, cat.name, n) + labs(x = 'call date', y = 'taxonomy')
+```
+
+`Talklines/Warmliness` has a spike in Dec, 2016, which might just be because of wrong categorization by 2-1-1 staffs during the transition period. Considering its similarity with `Mental Health Hotlines`, we might want to remove these calls as well for future analysis.
+
+
+## Geographic Distribution
+
+Following graph shows the geographic distribution of the calls for popular service types.
+
+```{r, fig.width=8, fig.height=2.5, fig.retina=2}
+source('../src/transform/count_cat_geo.R')
+
+dat <- CountCatGeo(mcalls1)
+p1 <- Heatmap1(dat, county, topic, log(n))
+p2 <- Heatmap1(dat, county, topic, n_scaled)
+
+plot_grid(p1, p2)
+```
+
+It is no surprise that Suffolk and Middlesex County contributed most calls, as they are the most populated counties. What matters more is the per capita data. Following graph is rendered with number of calls per 100,000 people:
+
+```{r, fig.width=8, fig.height=2.5, fig.retina=TRUE}
+p1 <- Heatmap1(dat, county, topic, log(p))
+p2 <- Heatmap1(dat, county, topic, p_scaled)
+plot_grid(p1, p2)
+```
+
+By the first look, Franklin County seems to have serious mental health issues. It is worth verifying where do exactly these calls come from. While it is not possible to identify the callers of all the calls, in the complete 2-1-1 dataset, there does exists some information to infer caller identity. For example, using phone numbers and notes by 2-1-1 staff, we can attribute about 80% of Call2Talk calls in Franklin county to one or two callers.
+
+WHen removing two most seen phone numbers from the dataset, the graph becomes this:
+
+```{r, fig.width=8, fig.height=2.5, fig.retina=TRUE}
+source('../src/transform/count_cat_geo.R')
+
+dat <- mcalls.complex %>%
+  filter(!(phone %in% c('4137687270','5084004343')) | is.na(phone), state == 'MA') %>%
+  CountCatGeo()
+p1 <- Heatmap1(dat, county, topic, log(p))
+p2 <- Heatmap1(dat, county, topic, p_scaled)
+plot_grid(p1, p2)
+```
+
+## Conclusion
+
+We have only one year of reliable longitudinal data, it is hard to detect any signals caused by demographic or economic changes over such a short period. 
+
+Since Call2Talk is the category most likely to get repetitive callers, it might be best if we could just exclude all Call2Talk calls once and for all.

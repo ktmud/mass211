@@ -235,14 +235,11 @@ calloutcome$airs.cat %<>% str_replace_all("(, | and )", "/") %>%
     .default = .
   )
 
-mcalls <- icalls %>%
-  left_join(calloutcome, by = "id")
-  # Filter our those with empty AIRS Category?
-  # filter(!is.na(airs.cat))
+mcalls.complex <- icalls %>% left_join(calloutcome, by = "id")
 
-count.cat.code <- count(mcalls, cat.code)
+count.cat.code <- count(mcalls.complex, cat.code)
 
-icalls.m <- mcalls %>%
+icalls.complex.m <- mcalls.complex %>%
   # data before May, 2016 are not complete
   filter(call.start > as.Date("2016-05-01")) %>%
   # keep popular cat at the top
@@ -256,3 +253,8 @@ icalls.m <- mcalls %>%
   # remove NA's
   filter(!is.na(cat.code))
 # View(mcalls %>% count(agency.simple, sort = T))
+
+mcalls.complex %>% summarise(mean(is.na(phone), na.rm=T))
+
+mcalls <- mcalls.complex
+icalls.m <- icalls.complex.m

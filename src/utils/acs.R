@@ -1,3 +1,7 @@
+##
+# Load Census Data At Any Geographic Level
+#
+##
 library(zipcode)
 library(magrittr)
 library(dplyr)
@@ -9,10 +13,19 @@ data(zipcode)
 
 # as copied from the BARI's ACS indicators R syntax
 kAPIKey <- "829a6baee8d09366819cd05f131b47aeaf232576"
-# api.key.install(kAPIKey)
+api.key.install(kAPIKey)
 
-# A list of default variables to fetch
-# must be one name one code
+# Build Sequence of multi variables
+MultiVar <- function(name, total) {
+  str_c(name, '_', str_pad(seq(1, total), 3, pad = "0"))
+}
+
+
+# A list of default variables to fetch, must be one name one code
+# can use `MultiVar` to include multi variables, in which case the variable
+# names will have a 1-n suffix.
+# Ref1: https://api.census.gov/data/2015/acs5/variables.html
+# Ref2: https://www.socialexplorer.com/data/ACS2015_5yr/metadata/?ds=ACS15_5yr
 kDefaultVars <- c(
   TotalPop = "B01003_001",
   Female = "B01001_026",
@@ -30,44 +43,75 @@ kDefaultVars <- c(
   Age75P = "B06001_012",
   
   # Education
-  Edu = str_c("B15003_", str_pad(1:25, 3, pad = "0")),
+  # Universe: Population 25 years and Over
+  Edu = MultiVar("B15003", 25),
   
-  BornInState = "B06001_013",
-  BornInOtherState = "B06001_025",
-  NativeBornOutOfUS = "B06001_037",
-  ForeignBorn = "B05002_013",
+  # Child In Need
+  CIN = MultiVar("B09010", 13),
+  
+  # Citizenship
+  # CitizenTotal = "B05002_001",   # the same as TotalPop
+  BornInState = "B05002_003",
+  BornInOtherState = "B05002_004",
+  NativeBornOutOfUS = "B05002_009",
+  ForeignBornNaturalized = "B05002_014",
+  ForeignBornNonCitizen = "B05002_021",
+  
+  # Health Insurance
+  HI = MultiVar("B27020", 16),
   
   White = "B03002_003",
   Black = "B03002_004",
+  AmIndian = "B03002_005",
   Asian = "B03002_006",
+  PacificIslander = "B03002_007",
+  OtherRace = "B03002_008",
   Hispanic = "B03002_012",
   TwoOrMore = "B03002_009", # two or more races
   
-  # median house income
+  Veteran = MultiVar("B21001", 3),
+  
+  # median household income
   MedHouseIncome = "B19013_001",
+  # median housing cost
+  MedHousingCost = "B25105_001",
+  
+  # Universe: Owner-occupied housing units
+  MedHouseValue = 'B25077_001',
+  
+  # Median Gross Rent as a Percentage of Household Income
+  # Universe: Renter-occupied housing units paying cash rent
+  MedRentAsIncomePct = "B25071_001",
+  
+  # Gini Index of Income Inequality
   GINI = "B19083_001",
   
   PubAssistTotal = "B19057_001",
   PubAssistYes = "B19057_002",  # household with public assistantship
   
-  Poverty = str_c("B17019_", str_pad(1:12, 3, pad = "0")),
+  # FamilyPoverty = str_c("B17019_", str_pad(1:12, 3, pad = "0")),
+  
+  Poverty = MultiVar("C17002", 8),
   
   LaborTotal = "B23025_003",  # civilian in labor force
   LaborUnemp = "B23025_005",
   
-  # Geographical Mobility in the Past Year by Tenure
-  # for Current Residence in the US
-  GM_Total = "B07013_001",
-  OwnerOccupied = "B07013_002",
-  RenterOccupied = "B07013_003",
-  SameHouse1YearAgo = "B07013_004",
+  # Geographical Mobility in the Past Year by Tenure for Current Residence in the US
+  # Universe: Population 1 year and Over in households in the United States
+  GM = MultiVar("B07013", 4),
   
-  HouseholdTotal = "B11011_001", 
-  MaleHead = "B11011_011",  # male householder, no wife
-  FemaleHead = "B11011_012",  # female householder, no husband
-  Nonfamily = "B11011_016", # nonfamily households
-  GrandWithChildTotal = "B10050_001",
-  GrandHead = "B10051_002"
+  # Universe: Occupied housing units
+  OH = MultiVar("B25003", 3),
+  
+  # Occupancy Status
+  # Universe: Housing units
+  OS = MultiVar("B25003", 3),
+  
+  # Household type
+  Household = MultiVar("B11001", 9),
+  # Grandparents as caregivers
+  # Universe: Population 30 years and Over
+  GH = MultiVar("B10050", 3)
 )
 
 # standardize <- function(dat, ...) {
@@ -115,12 +159,21 @@ MutateAcs <- function(dat) {
       BornInState = BornInState / totalPop,
       BornInOtherState = BornInOtherState / totalPop,
       NativeBornOutOfUS = NativeBornOutOfUS / totalPop,
-      ForeignBorn = ForeignBorn / totalPop,
+      ForeignBornNonCitizen = ForeignBornNonCitizen / totalPop,
+      ForeignBornNaturalized = ForeignBornNaturalized / totalPop,
+      
+      # Percentage of verterans (for population >= 18 years old)
+      Veteran = Veteran2 / Veteran1,
+      
+      # Health Insurance
+      HI_PrivateInsured = (HI4 + HI10 + HI15) / HI1,
+      HI_PublicInsured = (HI5 + HI11 + HI16) / HI1,
+      HI_Insured = (HI3 + HI9 + HI14) / HI1,
       
       NoSchool = Edu2 / totalEdu,
       # didn't complete high school, including no school
       LessThanHS = SumCols("Edu", 2:16) / totalEdu,
-      HSGrad = SumCols("Edu", 17:18) / totalEdu,  # didn't complete high school
+      HSGrad = SumCols("Edu", 17:18) / totalEdu,  # Regular High School + GED
       SomeColl = SumCols("Edu", 19:21) / totalEdu,  # including associate degree 
       Bach = Edu22 / totalEdu,  # barchelor's
       Master = Edu23 / totalEdu,  # master's
@@ -128,32 +181,65 @@ MutateAcs <- function(dat) {
       Doc = Edu25 / totalEdu,  # doctorial
       AtLeastBachelor = Bach + Master + Prof + Doc,
       
-      BelowPoverty = Poverty2 / Poverty1,
+      MedHouseIncome = MedHouseIncome,
+      # MedHousingCost = MedHousingCost * 12,
+      MedRentAsIncomePct = MedRentAsIncomePct / 100,
       
-      # how many in poverty are owner occupied households
-      BelowPovertyOccupied = SumCols("Poverty", c(4, 8, 11)) / Poverty2,
-      # how many in poverty are maried couples
-      BelowPovertyMarried = Poverty3 / Poverty2,
+      # number of residents per occupied housing units
+      PopPerHousing = if_else(OS2 == 0, as.numeric(NA), TotalPop / OS2),
+      VacentUnits = OS3 / OS1,
+      OwnerOccupied = OH2 / OH1,
+      RenterOccupied = OH3 / OH1,
+      SameHouse1YearAgo = GM4 / GM1,
+      
+      BelowHalfPoverty = Poverty2 / Poverty1,
+      BelowPoverty = (Poverty2 + Poverty3) / Poverty1,
+      BelowTwoPoverty = (Poverty1 - Poverty8) / Poverty1,
+      AboveTwoPoverty = Poverty8 / Poverty1,
+      PubAssist = PubAssistYes / PubAssistTotal,
+      PubAssistYes = NULL,
+      PubAssistTotal = NULL,
+      UnempRate = LaborUnemp / LaborTotal,
+      
+      ChildInNeed = CIN2 / CIN1,
+      ChildInNeed_SingleParent = (CIN5 + CIN6) / CIN1,
+      ChildInNeed_SingleMom = CIN6 / CIN1,
+      ChildInNeed_Nonfamily = CIN7 / CIN1,
+      
+      # FamilyBelowPoverty = FamilyPoverty2 / FamilyPoverty1,
+      # # how many in poverty are owner occupied households
+      # FamilyBelowPovertyOccupied = SumCols("FamilyPoverty", c(4, 8, 11)) / FamilyPoverty2,
+      # # how many in poverty are maried couples
+      # FamilyBelowPovertyMarried = FamilyPoverty3 / FamilyPoverty2,
       
       White = White / totalPop,
       Black = Black / totalPop,
       Asian = Asian / totalPop,
+      # AmIndian = AmIndian / totalPop,
+      # PacificIslander = PacificIslander / totalPop,
+      OtherRace = (AmIndian + PacificIslander + OtherRace) / totalPop,
+      AmIndian = NULL, PacificIslander = NULL,
       Hispanic = Hispanic / totalPop,
       TwoOrMore = TwoOrMore / totalPop,
-      EthHet = 1 - (White^2 + Hispanic^2 + Black^2 + Asian^2 + TwoOrMore^2),
-      MedHouseIncome = MedHouseIncome,
-      OwnerOccupied = OwnerOccupied / GM_Total,
-      RenterOccupied = RenterOccupied / GM_Total,
-      SameHouse1YearAgo = SameHouse1YearAgo / GM_Total,
-      MaleHead = MaleHead / HouseholdTotal,
-      FemaleHead = FemaleHead / HouseholdTotal,
-      Nonfamily = Nonfamily / HouseholdTotal,
-      GrandHead = GrandHead / GrandWithChildTotal,
-      PubAssist = PubAssistYes / PubAssistTotal,
-      UnempRate = LaborUnemp / LaborTotal,
+      EthHet = 1 - (White^2 + Hispanic^2 + Black^2 + Asian^2 + OtherRace^2 + TwoOrMore^2),
+      
+      HH_MarriedCouple = Household3 / Household1,
+      HH_SingleHead = Household4 / Household1,
+      HH_MaleHead = Household5 / Household1,
+      HH_FemaleHead = Household6 / Household1,
+      HH_Nonfamily = Household7 / Household1,
+      HH_LiveAlone = Household8 / Household1,
+      HH_NotAlone = Household9 / Household1,
+      
+      GrandHead = GH3 / GH1,
       GINI = GINI
     ) %>%
-    select(-matches("^(Edu|Poverty)")) %>%
+    select(
+      # clear all multi-cat variables
+      # can't start with A, A is reserverd for "Age"
+      -matches("^[B-Z]([a-zA-Z]*)[0-9]"),
+      -matches('Labor')
+    ) %>%
     # standardize("MedHouseIncome", "BelowPoverty",
     #            "UnempRate", "AtLeastBachelor",
     #            "White", "Black") %>%
@@ -192,7 +278,7 @@ FetchACS <- function(
     CT_ID_10 <- geo.m$state * 1e9 + geo.m$county * 1e6 + as.integer(geo.m$tract)
     CT_ID_10 <- str_pad(CT_ID_10, 11, pad = "0")
     dat %<>% estimate() %>% as.data.frame()
-    dat <- cbind(NAME = row.names(dat), CT_ID_10, dat)
+    dat <- cbind("name" = row.names(dat), CT_ID_10, dat)
     row.names(dat) <- NULL
   } else if (geo.group == "county") {
     geo.filter = geo.make(state = state, county="*")
@@ -260,4 +346,66 @@ FetchACS <- function(
     return(dat)
   }
   MutateAcs(dat)
+}
+
+
+# aci.county <- FetchACS(geo.group = "county")
+
+# `aci` is ACS indicators
+if (!exists("aci.zip")) {
+  aci.zip.orig <- FetchACS(geo.group = "zip", raw.numbers = TRUE)
+  aci.zip <- MutateAcs(aci.zip.orig)
+  # Remove extrem values (the Smith College - an all-girl university)
+  aci.zip %<>% filter(Female < 0.9)
+}
+# if (!exists("aci.tract")) {
+#   aci.tract <- FetchACS(geo.group = "tract")
+# }
+if (!exists("aci.county")) {
+  aci.county <- FetchACS(geo.group = "county")
+}
+if (!exists("aci.town")) {
+  aci.town <- FetchACS(geo.group = "town")
+  # Consolidate town names for ACS indicators data
+  aci.town %<>%
+    mutate(
+      name = name %>%
+        str_replace("Manchester-by-the-Sea", "Manchester")
+    )
+}
+if (!exists("zip.urbanpop")) {
+  # urban area to zip code relationship
+  # Data downloaded from:
+  # https://www.census.gov/geo/maps-data/data/ua_rel_download.html
+  ru.zip <- read_csv("data/rural_urban_zip.csv", col_types=cols(
+    .default = col_number(),
+    UA = col_character(),
+    UANAME = col_character(),
+    ZCTA5 = col_character()
+  ))
+  zip.urbanpop <- ru.zip %>%
+    # filter(!str_detect(UANAME, "Not in")) %>%
+    mutate(
+      is_non_urban = str_detect(UANAME, "Not in"),
+      is_urbanized = str_detect(UANAME, "Urbanized Area"),
+      is_cluster = str_detect(UANAME, " Cluster$"),
+      ZPOP = as.numeric(ZPOP),
+      ZAREALAND = as.numeric(ZAREALAND)
+    ) %>%
+    group_by(zip = ZCTA5) %>%
+    summarize(
+      # calculate percentage of people who live in any of the urbanized areas
+      # that overlaps with this ZIP code
+      p.urban_pop = sum(if_else(is_non_urban, 0, ZPOPPCT)),
+      # urban cluster population
+      p.urbanized_pop = sum(if_else(is_urbanized, ZPOPPCT, 0)),
+      p.urban_cluster_pop = sum(if_else(is_cluster, ZPOPPCT, 0)),
+      total_pop = mean(ZPOP),
+      total_land = sum(ZAREALAND) / 1000000,
+      total_urban_land = sum(if_else(is_non_urban, 0, ZAREALAND)) / 1000000,
+      # population density of the whole zip code
+      pop_den = total_pop / total_land,
+      urban_popden = if_else(total_urban_land == 0, as.numeric(NA),
+                             total_pop / total_urban_land)
+    )
 }

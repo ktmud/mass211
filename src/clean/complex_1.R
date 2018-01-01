@@ -29,21 +29,6 @@ if (!exists("custom_fields")) {
   )
 }
 
-FirstNonNA <- function(x) {
-  x[first(which(!is.na(x)))]
-}
-
-MergeAliasColumns <- function(x, ...) {
-  name.mapping <- list(...)
-  nms <- names(name.mapping)
-  x[, nms] <- lapply(nms, function(k) {
-    ret <- x[, name.mapping[[k]]] %>% apply(1, FirstNonNA)
-    x[, name.mapping[[k]]] <<- NULL
-    ret
-  })
-  x
-}
-
 CleanUselessCols <- function(dat) {
   # Clean useless columns
   #   - columns with >99% observations being NA
@@ -96,7 +81,6 @@ RenameColumns <- function(dat) {
       call.start = CallDateAndTimeStart,
       call.end = CallDateAndTimeEnd,
       call.length = CallLength,
-      
       worker.num = PhoneWorkerNum,
       worker.name = PhoneWorkerName,
       enter.worker.num = EnteredByWorkerNum,
@@ -182,18 +166,17 @@ RenameColumns <- function(dat) {
       cc.type.needed = `Help Finding Child Care - Type of Child Care Needed`,
       call.reason = `Issues - Reason for Call`
     ) %>%
-    MergeAliasColumns(
-      called.before = c("called.before", "called.before2",
-                        "called.before3", "called.before4"),
-      how.heard = c("how.heard", "how.heard2",
-                        "how.heard3", "how.heard4"),
-      lang = c("lang", "cra.lang"),
-      caller.pin.relation = c("caller.pin.relation", "dd.caller.pin.relation"),
-      age = c("age", "dd.age"),
-      gender = c("gender", "dd.gender"),
-      military = c("military", "dd.military")
-    ) %>%
     mutate(
+      # Fall backs
+      called.before = FirstNonNA(called.before, called.before2, called.before3, called.before4),
+      how.heard = FirstNonNA(how.heard, how.heard2, how.heard3, how.heard4),
+      lang = FirstNonNA(lang, cra.lang),
+      caller.pin.relation = FirstNonNA(caller.pin.relation, dd.caller.pin.relation),
+      age = FirstNonNA(age, dd.age),
+      gender = FirstNonNA(gender, dd.gender),
+      military = FirstNonNA(military, dd.military),
+      
+      date = call.start,
       caller.name = CollapsedText(caller.name, caller.lastname, sep = " "),
       caller.lastname = NULL,
       comment = CollapsedText(comment, cc.notes, cra.notes, sep = " \n "),

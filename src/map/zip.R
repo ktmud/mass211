@@ -4,7 +4,8 @@ zip.geo@data %<>%
   rename(zip = postcode) %>%
   mutate(
     town = str_to_title(city_town) %>%
-      str_replace(", Town of", ""),
+      str_replace(", Town Of", ""),
+    # postal area name
     pa_name = str_to_title(pa_name),
     county = str_to_title(county)
   ) %>%
@@ -25,7 +26,6 @@ zip.geo@data %<>%
   mutate(
     PopDen = TotalPop / (shape_area * 3.86102159 * 10e-7)
   ) %>%
-  standardize("PopDen") %>%
   # select zip column from the raw data,
   # so to make sure we have the same amount of rows
   # this may cause duplicate zips, which is fine
@@ -34,6 +34,15 @@ zip.geo@data %<>%
   # for any geo unit
   rename(name = zip) %>%
   # geo data can only be raw data frame, not tibble
+  AddResidual(
+    # n_call ~
+    #   White + Hispanic + Asian + TwoOrMore + EthHet +
+    #   MedHouseIncome + PubAssist + 
+    #   p.urbanpop +
+    #   Age1824 + 
+    #   I(Age6061 + Age6264 + Age6574) +
+    #   offset(log(TotalPop))
+  ) %>%
   as.data.frame()
 
 zip.geo.simple <- ms_simplify(zip.geo)
@@ -42,8 +51,3 @@ zip.geo.simple <- ms_simplify(zip.geo)
 num_cols <- 7:ncol(zip.geo.simple@data)
 zip.geo.simple@data[, num_cols] <- round(
   zip.geo.simple@data[, num_cols], digits=6)
-
-writeOGR(zip.geo.simple,
-         "Mass211/data/zip.json",
-         layer = "ZIP_POLY",
-         driver = "GeoJSON")

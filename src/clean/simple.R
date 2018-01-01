@@ -32,89 +32,57 @@ CleanMass211Simple <- function(m) {
     "called.before", "family.size", "children.age"
   )
   # remove rows with bad IDs
-  m <- m[!is.na(m$id), ]
+  m %<>% filter(!is.na(id))
   m <- cbind(
     m[, 1:4],
     cat2.code = as.factor(gsub("([A-Z]+).*", "\\1", m$cat.code)),
     m[, 5:ncol(m)]
   )
-  # Recode values
-  mapvalues <- plyr::mapvalues
-  m$type <- mapvalues(
-    m$type, unique(m$type),
-    # "Save me from required fields" -> "Unknown"
-    c("Mass211", "Disaster", "SaveMe", "Chat", "Text", "")
-  )
-  m$date <- as.POSIXct(
-    m$date, tz = "America/New_York", format = "%m/%d/%Y %H:%M:%S"
-  )
-  m$uw.region <- str_replace_all(
-    m$uw.region,
-    "( *)(.*?)( *)United Way( of)?( *)(.*)( *)$",
-    "\\2\\6"
-  )
-  m$caller.relation <- mapvalues(
-    m$caller.relation, unique(m$caller.relation),
-    # "Professional" =
-    #    Professional Calling for Client
-    # "Family member" =
-    #    Caller contacting for family member living elsewhere or friend
-    c("Self/Household", "Professional", "Family/Friend Elsewhere", "")
-  )
-  m$age <- mapvalues(
-    m$age, unique(m$age),
-    c("45-64", "18-24", "25-44", ">65", "Unknown", "<18", "", "Declined to Answer")
-  )
-  m$lang.interp.used <- mapvalues(
-    m$lang.interp.used, unique(m$lang.interp.used),
-    # "Not Applicable" -> ""
-    # Staff = "Staff Provided"
-    # Other = "Someone else provided"
-    # Service = "Translation Service"
-    c("", "Staff", "Other", "", "Service")
-  )
-  m$gender <- fct_recode(m$gender, "M" = "Male", "F" = "Female")
-  m$military <- mapvalues(
-    m$military, unique(m$military),
-    c("None", "Veteran", "", "Unknown", "Declined", "Active Duty")
-  )
-  m$household.insured <- mapvalues(
-    m$household.insured, unique(m$household.insured),
-    # -1 means unknown
-    c(0, NA, -1, 1)
-  )
-  m$children.age <- fct_recode(
-    m$children.age,
-    "None"="No Children under 18 years in the home",
-    "6to18"="Children 6 to under 18 years",
-    "0to5"="Children 0 to 5 years"
-  )
-  m$family.size <- fct_recode(
-    m$family.size,
-    "1"="Single Person (1)"
-  )
-  m$called.before <- fct_recode(
-    m$called.before,
-    "Same issue"="Yes, for the same issue",
-    "Diff issue"="Yes, for a different issue"
+  m %<>% mutate(
+    date =  date %>% as.POSIXct(
+      tz = "America/New_York",
+      format = "%m/%d/%Y %H:%M:%S"
+    ),
+    uw.region = uw.region %>%
+      str_replace_all(
+        "( *)(.*?)( *)United Way( of)?( *)(.*)( *)$",
+        "\\2\\6"
+      ),
+    type = type %>%
+      fct_recode(
+        "SaveMe"="Save me from required fields"
+      ),
+    caller.relation = caller.relation %>%
+      fct_recode(
+        "Self/Household"="Caller Contacting for Self/Household",
+        "Professional"="Professional Calling for Client",
+        "Family/Friend Elsewhere"="Caller contacting for family member living elsewhere or friend"
+      ),
+    age = age %>% fct_recode(
+      "<18"="Under age 18 Years",
+      "18-24"="Age 18 to 24 Years",
+      "25-44"="Age 25 to 44 Years",
+      "45-64"="Age 45 to 64 Years",
+      ">65"="Age 65 years and older",
+      "Declined"="Declined to Answer",
+      NULL = 'Unknown'
+    ),
+    gender = gender %>% fct_recode("M" = "Male", "F" = "Female"),
+    children.age = children.age %>%
+      fct_recode(
+        "None"="No Children under 18 years in the home",
+        "6to18"="Children 6 to under 18 years",
+        "0to5"="Children 0 to 5 years"
+      ),
+    family.size = family.size %>% fct_recode("1"="Single Person (1)"),
+    called.before = called.before %>%
+      fct_recode(
+        "Same issue"="Yes, for the same issue",
+        "Diff issue"="Yes, for a different issue"
+      )
   )
   # XXX: data before May, 2016 are incomplete
-  m %>% filter(date > as.Date("2016-05-01"))
-}
-
-DistinctCalls <- function(mcalls) {
-  # Distinct 211 calls by `cat.name`, popular
-  # categories will prevail.
-  # Args:
-  #   mcalls - data frame of all calls where calls might be in multiple categories
-  #            (showing as duplicate rows)
-  count.cat.code <- count(mcalls, cat.code)
-  mcalls %>%
-    filter(!is.na(cat.code)) %>%
-    left_join(count.cat.code, by = "cat.code") %>%
-    rename(cat.total = n) %>%
-    arrange(id, desc(cat.total)) %>%
-    distinct(id, .keep_all = TRUE)
+  # m %>% filter(date > as.Date("2016-05-01"))
 }
 
 TrustZipForTown <- function(dat) {
@@ -123,17 +91,27 @@ TrustZipForTown <- function(dat) {
   
   # Filter out ZIP codes with fixed town name
   ztc1 <- ztc %>%
-    count(zip, town) %>%
+    count(zip) %>%
+    # number of towns associated with this zip code
     filter(n == 1) %>%
     select(-n)
+  ztc1 <- ztc %>%
+    filter(zip %in% ztc1$zip) %>%
+    rename(town_from_zip = town)
   
   # Set town name based on ZIP code
   dat %>%
     left_join(ztc1, by = 'zip') %>%
     mutate(
-      town = ifelse(is.na(town.y), town.x, town.y)
+      # if town name can be inferred from zip code
+      # use town name from the zip code.
+      # This is because sometimes the recorded town name
+      # is not consistent with the official township names,
+      # as some (historical) towns were absorbed as neighborhoods
+      # in a bigger town
+      town = FirstNonNA(town_from_zip, town)
     ) %>%
-    select(-town.x, -town.y) %>%
+    select(-town_from_zip) %>%
     left_join(ztc)
 }
 
@@ -141,12 +119,23 @@ TrustZipForTown <- function(dat) {
 ztc <- read_csv("data/MA_geo_units/ztc.csv")
 
 # mcalls - calls with taxonomy
-if (!exists("mcalls.raw")) {
-  mcalls.raw <- ReadExcels(Sys.glob("data/211/20170731/*"))
+if (!exists("mcalls.simple.raw")) {
+  mcalls.simple.raw <- ReadExcels(Sys.glob("data/211/20170731/*"))
 }
+
 # TODO: fix more towns
-mcalls <- mcalls.raw %>%
+mcalls.simple <- mcalls.simple.raw %>%
   CleanMass211Simple() %>%
-  TrustZipForTown()
-# icalls - calls deduplicated by call id
-icalls <- DistinctCalls(mcalls)
+  TrustZipForTown() %>%
+  # remove duplicate calls (distinct by id + cat.code)
+  distinct(id, cat.code, .keep_all=TRUE)
+mcalls.simple.mental <- mcalls.simple %>%
+  filter(is.na(type))
+mcalls.simple <- mcalls.simple %>%
+  filter(!is.na(type))
+
+# Completeness of data fields
+mcalls.simple %>% summarise(mean(gender == 'F', na.rm=T))
+mcalls.simple %>% summarise(mean(is.na(gender)))
+mcalls.simple %>% summarise(mean(is.na(military)))
+mcalls.simple %>% summarise(mean(caller.relation == 'Self/Household', na.rm=TRUE))

@@ -1,0 +1,213 @@
+---
+title: "Mass 211: Temporal Validation"
+output: html_notebook
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(cache=TRUE, echo=FALSE)
+
+library(tidyverse)
+library(lubridate)
+library(randomForest)
+library(caret)
+library(gbm3)
+```
+
+```{r}
+setwd('~/Dropbox/Work/Mass 211')
+
+if (!exists('mcalls.full')) {
+  source('src/utils/helpers.R')
+  source('src/utils/geo.R')
+  mcalls.full <- read_csv('data/mcalls_full.csv')
+}
+
+CleanDataForRF <- function(icalls) {
+  dat <- icalls %>%
+    DistinctCalls() %>%
+    GeoCount("zip", TRUE) %>%
+    filter(
+      TotalPop > 200,
+      n_call >= 5
+    ) %>%
+    mutate(
+      # PopDensity = log(pop_den),
+      calls_n = n_call,
+      calls = log(n_call * 1000 / TotalPop)
+      # calls = log(n_call * 1000 / TotalPop),
+      # name = NULL,
+      # n_call = NULL,
+      # total_pop = NULL
+      # total_land = NULL,
+      # total_urban_land = NULL
+    ) %>%
+    select(
+      -name,
+      -starts_with('n_call'),
+      -starts_with('p_call'),
+      -ends_with('_land'),
+      # -contains('p.urban'),
+      -urban_popden,
+      -HSGrad,
+      -SomeColl,
+      -Bach, -Master, -Prof, -Doc,
+      # -BelowPovertyMarried,
+      # -BelowPovertyOccupied,
+      # -pop_den,
+      -total_pop
+    )
+  
+  dat <- dat %>%
+    na.omit() %>%
+    as.data.frame()
+  dat_int <- dat %>%
+    select(-calls)
+  dat %>% select( -calls_n, -TotalPop)
+}
+```
+
+```{r}
+dat.train <- mcalls.full %>%
+    filter(
+      cat.code != 'RP-1500.1400-500',
+      cat.code != 'RP-1500.1400-800',
+      date >= ymd('2016-06-01'),
+      date < ymd('2017-01-01')
+    ) %>% CleanDataForRF()
+
+dat.test <- mcalls.full %>%
+    filter(
+      cat.code != 'RP-1500.1400-500',
+      cat.code != 'RP-1500.1400-800',
+      date >= ymd('2017-01-01'),
+      date < ymd('2017-09-01')
+    ) %>% CleanDataForRF()
+```
+
+```{r}
+oob.err <- double(1)
+oob.err.full <- double(1)
+test.err <- double(1)
+#mtry is no of Variables randomly chosen at each split
+for(mtry in 1:20) {
+  rf.train <- randomForest(
+    calls ~ ., data = dat.train, mtry = mtry, ntree = 500
+  )
+  oob.err[mtry] <- rf.train$mse[500] #Error of all Trees fitted
+  
+  pred <- predict(rf.train, dat.test) #Predictions on Test Set for each Tree
+  test.err[mtry] <- with(dat.test, mean((calls - pred) ^ 2)) # Mean Squared Test Error
+  # cat(mtry, " ") #printing the output to the console
+}
+
+matplot(
+  1:mtry ,
+  cbind(oob.err, test.err),
+  pch = 19 ,
+  col = c("red", "blue"),
+  type = "b",
+  ylab = "Mean Squared Error",
+  xlab = "Number of Predictors Considered at each Split"
+)
+legend(
+  "topright",
+  legend = c("Out of Bag Error",
+             "Test Error"),
+  pch = 19,
+  col = c("red", "blue")
+)
+```
+
+```{r, fig.width=7, fig.height=4}
+set.seed(1984)
+
+RFXY <- function(dat) {
+  y <- dat$calls
+  x <- dat %>% select(-calls)
+  # removed mostly-zero variables and strongly correlated variables
+  # x2 <- x[, -nearZeroVar(x)]
+  # x2 <- x2[, -findCorrelation(cor(x2), .9)]
+  list(x=x, y=y)
+}
+
+xy.train <- RFXY(dat.train)
+xy.test <- RFXY(dat.test)
+
+model <- randomForest(
+  xy.train$x, xy.train$y,
+  xy.test$x, xy.test$y,
+  # na.action = na.roughfix,
+  # subset = train,
+  ntree = 400,
+  mtry = 20,
+  importance = TRUE)
+model
+plot(model, main="Random Forest applied to 2-1-1 demand prediction")
+varImpPlot(model, main="Variable importance for 2-1-1 demand regression")
+```
+
+```{r}
+library(pscl)
+
+dat2.train <- mcalls.full %>%
+    filter(
+      cat.code != 'RP-1500.1400-500',
+      cat.code != 'RP-1500.1400-800',
+      date >= ymd('2016-06-01'),
+      date < ymd('2017-01-01')
+    ) %>%
+    DistinctCalls() %>%
+    GeoCount("zip", TRUE) %>%
+    filter(
+      TotalPop > 200,
+      n_call >= 5
+    )
+
+dat2.test <- mcalls.full %>%
+    filter(
+      cat.code != 'RP-1500.1400-500',
+      cat.code != 'RP-1500.1400-800',
+      date >= ymd('2017-01-01'),
+      date < ymd('2017-09-01')
+    ) %>%
+    DistinctCalls() %>%
+    GeoCount("zip", TRUE) %>%
+    filter(
+      TotalPop > 200,
+      n_call >= 5
+    )
+```
+
+```{r}
+rfe_sizes <- c(2, 4, 8, 10, 13, 15, 20, 25, 30, 40)
+ctrl <- rfeControl(functions = lmFuncs,
+                   # resampling methods: bootstrap
+                   method = "boot",
+                   number = 550,
+                   verbose = FALSE)
+lmProfile <- rfe(xy.train$x, xy.train$y, sizes = rfe_sizes, rfeControl = ctrl)
+lmProfile
+
+xyplot(lmProfile$results$RMSE ~ lmProfile$results$Variables,
+       type = c("g", "p", "l"),
+       auto.key = TRUE)
+```
+
+```{r}
+lmProfile <- rfe(xy.test$x, xy.test$y, sizes = rfe_sizes, rfeControl = ctrl)
+lmProfile
+
+xyplot(lmProfile$results$RMSE ~ lmProfile$results$Variables,
+       type = c("g", "p", "l"),
+       auto.key = TRUE)
+```
+
+```{r}
+fit <- lmProfile$fit
+summary(fit)
+```
+
+```{r}
+fit <-
+```
+

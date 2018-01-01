@@ -1,0 +1,493 @@
+---
+title: "Mass 211: Decision Trees"
+output: 
+  tufte::tufte_handout: default
+  tufte::tufte_html: default
+  html_notebook: 
+    code_folding: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(cache=TRUE, echo=FALSE)
+
+library(tidyverse)
+library(lubridate)
+library(randomForest)
+library(caret)
+library(gbm3)
+```
+
+
+This report surveys two popular tree-based additive regression algorithms--Random Forests and Gradient Boosting--and evaluate their performance in predicting the 2-1-1 demands.
+
+## Methods
+
+I first filter out ZIP codes with at least 5 calls and 200 people, then regress log number of calls per 1,000 people (`log( # of calls * 1000 / total population)`) on 65 demographic variables.
+
+<!-- The tree-based models are normally smart enough to figure out which variables are most important. -->
+
+Calls related to Call2Talk and Suicide Prevention Hotline are excluded since they are more vulnerable to skewness caused by repetitive calls.
+
+<!-- The full list of predictors are shown below. Unless specificed, they are proportions of each demographic group in a neighborhood. -->
+
+```{r, message=FALSE, warning=FALSE, results='hide'}
+setwd('~/Dropbox/Work/Mass 211')
+
+if (!exists('mcalls.full')) {
+  source('src/utils/helpers.R')
+  source('src/utils/geo.R')
+  mcalls.full <- read_csv('data/mcalls_full.csv')
+}
+
+dat <- mcalls.full %>%
+  filter(
+    # Remove "Mental Health Hotlines"
+    # and "Suicide Prevention Hotlines"
+    # cat.code != 'RP-1500.1400-500',
+    # cat.code != 'RP-1500.1400-800',
+    date >= ymd('2016-06-01'),
+    date < ymd('2017-09-01')
+  ) %>%
+  DistinctCalls() %>%
+  GeoCount("zip", TRUE) %>%
+  filter(
+    TotalPop > 100,
+    n_call >= 5
+  ) %>%
+  mutate(
+    # PopDensity = log(pop_den),
+    calls_n = n_call,
+    p_call = n_call * 1000 / TotalPop,
+    calls = log(p_call)
+    # calls = log(n_call * 1000 / TotalPop),
+    # name = NULL,
+    # n_call = NULL,
+    # total_pop = NULL
+    # total_land = NULL,
+    # total_urban_land = NULL
+  ) %>%
+  select(
+    -name,
+    -starts_with('n_call'),
+    -starts_with('p_call_'),
+    -ends_with('_land'),
+    # -contains('p.urban'),
+    -urban_popden,
+    -HSGrad,
+    -SomeColl,
+    -Bach, -Master, -Prof, -Doc,
+    # -BelowPovertyMarried,
+    # -BelowPovertyOccupied,
+    # -pop_den,
+    -total_pop
+  )
+
+dat <- dat %>%
+  na.omit() %>%
+  as.data.frame()
+
+dat_int <- dat %>%
+  select(-calls, -p_call)
+
+dat2 <- dat %>%
+  select(
+    calls = p_call,
+    -calls_n,
+    -p_call,
+    -TotalPop
+  )
+  
+dat <- dat %>%
+  select(
+    -calls_n,
+    -p_call,
+    -TotalPop
+  )
+
+
+write_csv(dat, 'data/aci_zip_calls.csv')  # ACI with calls by ZIP code
+```
+
+```{r}
+## Check Point
+setwd('~/Dropbox/Work/Mass 211')
+if (!exists('dat')) {
+   dat <- read_csv('data/mcalls_full.csv')
+}
+```
+
+
+## Random Forest
+
+Random forests repetitively sample a subset of variables and observations to build a tree, then averages the node values to find the best variable/value for splitting the trees.
+
+By smoothing over different trees, Random Forests is resilient to overfitting. It is robust to an increase of noise variables, and generally performs better with many noise variables than other bagging models such as Gradient Boosting.
+
+That been said, we still have a few hyperparameters to tune: the size of sample observations used  during each iteration, the number of variables to draw, the number of trees to grow (# of iterations), and the minimal/maximal size of terminal nodes (size of the trees).
+
+### Number of randomly selected splitting variables m
+
+Among these parameters, perhaps the most imporatant one is the number of random variables (predictors) selected when growing a tree. Following plot shows the Out of Bag Error (for training data) and Test Error (for validation data) for different number of variables selected.
+
+```{r, fig.width=6, fig.height=3}
+plot_rf <- function(dat) {
+  set.seed(1984)
+  
+  # use 70% data for training and remaining 30% for validation
+  train <- sample(1:nrow(dat), ceiling(nrow(dat) * 0.7))
+  dat.train <- dat[train, ]
+  dat.test <- dat[-train, ]
+  
+  y <- dat$calls
+  x <- dat %>% select(-calls)
+  # removed mostly-zero variables and strongly correlated variables
+  x2 <- x[, -nearZeroVar(x)]
+  x2 <- x2[, -findCorrelation(cor(x2), .9)]
+  x2 <- as.data.frame(x2)
+  # scaled
+  x2.scaled <- scale(x2)
+  x2.centered <- scale(x2, scale=FALSE)
+  x.scaled <- scale(x)
+  
+  oob.err <- double(1)
+  oob.err.full <- double(1)
+  test.err <- double(1)
+  #mtry is no of Variables randomly chosen at each split
+  for(mtry in 1:65) {
+    rf.train <- randomForest(
+      calls ~ ., data = dat.train, mtry = mtry, ntree = 500
+    )
+    rf.full <- randomForest(
+      calls ~ ., data = dat, mtry = mtry, ntree = 500
+    )
+    oob.err[mtry] <- rf.train$mse[500] #Error of all Trees fitted
+    oob.err.full[mtry] <- rf.full$mse[500]
+    
+    pred <- predict(rf.train, dat.test) #Predictions on Test Set for each Tree
+    test.err[mtry] <- with(dat.test, mean((calls - pred) ^ 2)) # Mean Squared Test Error
+    # cat(mtry, " ") #printing the output to the console
+  }
+  ```
+  ```{r, fig.width=8, fig.height=4}
+  matplot(
+    1:mtry ,
+    cbind(oob.err, oob.err.full, test.err),
+    pch = 19 ,
+    col = c("red", "green", "blue"),
+    type = "b",
+    ylab = "Mean Squared Error",
+    xlab = "Number of Predictors Considered at each Split"
+  )
+  legend(
+    "topright",
+    legend = c("Out of Bag Error",
+               "Out of Bad Error (full data set)",
+               "Test Error"),
+    pch = 19,
+    col = c("red", "green", "blue")
+  )
+
+}
+
+plot_rf(dat)
+```
+
+```{r}
+plot_rf(dat2)
+```
+
+I have run above test several times as well as with different training/validation split, the results are different from time to time, but in general the errors reach their minimum at around 10 variables.
+
+The `randomForest` package actually provides a function `turnRF` for the same purpose.
+
+```{r}
+tuneRF(x, y, mtryStart = 2, ntreeTry = 500, stepFactor=1.5, improve=0.001, doBest=TRUE)
+```
+
+It shows a more or less the same result--`10` seems to be the most reasonable choice.
+
+<!-- Since the errors are non-decreasing in all circumstances, we might as well just select all variables at each iteration (basically falls back to a regular bagging process). -->
+
+
+### Minimal/Maximal node size
+
+The minimal and maximal node size defines the depth of the tree. [The Elemenets of Statistical Learning](https://web.stanford.edu/~hastie/ElemStatLearn/) recommends let the tree grow to its maximal, because it seldom make much difference in terms of speed and performance.
+
+The minimal node size may have an effect, but the impact is different depending on the dataset.
+
+```{r, fig.width=4, fig.height=2}
+library(forcats)
+library(modelr)
+
+nsizes <- c(50, 30, 20, 10, 5, 2)
+
+# map_dfr bind rows
+test.err <- map_dfr(nsizes, function(nsize) {
+  rf <- randomForest(
+    calls ~ .,
+    data = dat.train,
+    nodesize = nsize,
+    mtry = 10,
+    ntree = 500
+  )
+  dat.test %>%
+    add_predictions(rf) %>%
+    mutate(
+      nsize = nsize,
+      err = (calls - pred)^2
+    ) %>%
+    select(nsize, err)
+})
+
+test.err %>%
+  mutate(
+    min_node_size = as.character(nsize) %>%
+      fct_reorder(nsize)
+  ) %>%
+  ggplot(aes(min_node_size, err)) +
+  geom_boxplot(
+    fill = 'deepskyblue3'
+  ) +
+  ylim(c(0, 3)) +
+  theme_linedraw() +
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank()) +
+  labs(x = 'Minimum Node Size',
+       y = 'Squared Test Error')
+```
+
+Above graph shows the squared test error in regards to different minimum node sizes. The larger the node size, the shallower the tree is. It is clear that minimum node size doesn't matter in our case, neither.
+
+### Variable Importance
+
+With the parameters recommended by above analysis, we get a regression model that explains 62.38% of the variance and produces an RMSE of 0.266. Note that this is after we removed ZIP codes with NA's in any of the variables, and ZIP codes with no calls at all.
+
+One of the most useful application of Random Forest is to find variable importance. It can be evaluated by the increase in MSE when values of a variable are shuffled (%IncMSE), or the increase in node purities after using a variable for splitting the trees (IncNodePurity). We often only consider the former metric while evaluating the variables.
+
+```{r, fig.width=6, fig.height=3}
+set.seed(1984)
+
+model <- randomForest(calls ~ .,
+                      data = dat,
+                      # na.action = na.roughfix,
+                      # subset = train,
+                      ntree = 400,
+                      mtry = 10,
+                      importance = TRUE)
+model
+plot(model, main="Random Forest applied to 2-1-1 demand prediction")
+varImpPlot(model, main="Variable importance for 2-1-1 demand regression", n.var=20)
+```
+
+Surprisingly, the proportion of people who have private health insurance turns out to be the most important variable.
+
+Possible explanations for the top variables are:
+
+#### HI_PrivateInsured
+
+This is an indicator for "quality employment". People with private health insurance mostly get their health insurances from employer as an employment benefit. Employment with health care benefits tend to be those high-paying permanent jobs. Therefore high-paying jobs is a reflection of many other factors--such as good education, rich neighborhood, being of specific race, etc.
+
+#### MedHouseValue
+
+Median value of the property. This variable indicates how "rich" a neighborhood is. This seems to be, according to the model, a better indicator than the actual income of people who live in the neighborhood. One explantion is that some people with low income and high demand in services live in places with relatively high property values, too---namely, poor people who rent and live in the inner city.
+
+#### MedHouseIncome
+
+This one is straightforward.
+
+#### ChildInNeed
+
+Percentage of children living in a household that is receiving income support.
+
+#### MedHousingCost
+
+Median monthly housing cost, including morgages and gross rent. This variable also bears a sense of urbanity in it.
+
+In addition to above two variables, we have also MedRentAsIncomePct---the median value of rent as percentage of house income. Surprisingly, this variable didn't even make it to the Top 30.
+
+#### Black
+
+THe proportion of the residents being black. It is not a surprise that race is a huge factor in shaping the landscape of service needs.
+
+#### Age2534
+
+Age group 23 to 34 year old. Young parents are more likely to use one of the major services 2-1-1 provides: tracking the status of their application for child care assistance.
+
+#### HH_MarriedCouple
+
+Household type: married couple. Families with married couples are more stable and more resilient to financial difficulties.
+
+#### AtLeastBachelor
+
+Percentage of people with at least a 4-year Barchelor's degree for population 25 years and over. Education has implications in income and social stigma of using public services.
+
+## Comapre with Linear Regression
+
+For comparison, using a Linear Regression model and Backwards Selection with bootstrap resampling, we identifies the Top 5 variables as: `White`, `Hispanic`, `Black`, `OwnerOccupied`, and `MedHouseValue`.
+
+```{r, warning=FALSE}
+rfe_sizes <- c(2, 4, 8, 10, 13, 15, 20, 25, 30, 40)
+ctrl <- rfeControl(functions = lmFuncs,
+                   # resampling methods: bootstrap
+                   method = "boot",
+                   number = 200,
+                   verbose = FALSE)
+ctrl2 <- rfeControl(functions = lmFuncs,
+                   # resampling methods: bootstrap
+                   method = "boot",
+                   rerank = TRUE,
+                   number = 200,
+                   verbose = FALSE)
+# must use scaled values for linear regressions
+lmProfile <- rfe(x2.scaled, y, sizes = rfe_sizes, rfeControl = ctrl)
+lmProfile2 <- rfe(x2.scaled, y, sizes = rfe_sizes, rfeControl = ctrl2)
+lmProfile
+```
+```{r}
+xyplot(lmProfile$results$RMSE + lmProfile2$results$RMSE  ~
+       lmProfile$results$Variables,
+       type = c("g", "p", "l"),
+       auto.key = TRUE)
+```
+
+
+Race seems to be the most prominent factor, but it actually didn't turn to be conclusive in the best fitted model.
+
+```{r}
+summary(lmProfile2$fit)
+summary(update(lmProfile2$fit, data=dat,
+               formula = p_call ~ . - Black - BornInState))
+```
+
+```{r}
+summary(lmProfile2$fit)
+```
+
+The model explains 68.59% of the variance and achieves an RMSE of 0.4722.
+
+## Partial Plot
+
+Partial dependence plot shows the marginal effect of a variable on the class response, i.e., the effect of adding another variable to a model of existing variables. We apply this plotting technique with our Random Forest model.
+
+```{r, fig.width=6, fig.height=3, fig.fullwidth=TRUE}
+imp <- importance(model)
+# %IncMSE, i.e., decrease in accuracy if exclude this variable
+impvar <- rownames(imp)[order(imp[, 1], decreasing=TRUE)][1:12]
+op <- par(mfrow=c(2, 3))
+for (i in seq_along(impvar)) {
+    partialPlot(model, dat, impvar[i], xlab=impvar[i],
+                main=paste("Partial Dependence on"))
+}
+par(op)
+```
+
+We shall see a steady linear relationship if a variable is very important. The ticks at the base of the plots are deciles of the x variables, so we can infer the distribution of the x variables, too. The direction of the lines explains whether a variable is positively or negatively correlated with the target variable.
+
+The shape of the lines also bears some implications. For example, the plateau in the line of `MedHousingCost` (monthly housing cost), in the range between 1,000 USD to 1,500 USD per month, implies that a neighborhood's probability of in high demand of human services decreases sharply once its median rent reached above 1,500 per month. The same can be said for `HI_PublicInsured` and `ChildInNeed`, if the proportion of people who relies on Medicaid or other public health insurance options for their health care needs is more than 30%, or more than 20% of the children live in a family that requires income assistance, then the demand for 2-1-1 services increases dramatically.
+
+Race, income, education give relatively straight lines---which is maybe why we identified these variables as the most significant ones when running linear regression models.
+
+## Gradient Boosting
+
+Another popular technique in additive learning is Gradient Boosting. It creates a set of weaker learners and additively use information derived from existing models to improve the choices made for latter models.
+
+We apply Gradient Boosting to the same variables we trained above.
+
+```{r}
+dat_p <- dat %>%
+  rename(calls = p_call) %>%
+  select(
+    -name,
+    -town,
+    -county,
+    -pa_name,
+    -shape_area,
+    -log_p_call,
+    -starts_with('n_call'),
+    -starts_with('p_call'),
+    -ends_with('_land'),
+    # -contains('p.urban'),
+    -urban_popden,
+    -HSGrad,
+    -SomeColl,
+    -Bach, -Master, -Prof, -Doc,
+    # -BelowPovertyMarried,
+    # -BelowPovertyOccupied,
+    # -pop_den,
+    -total_pop
+  )
+```
+
+
+```{r, fig.width=5, fig.height=3}
+gmb1 <- gbm(calls ~ .,
+            n.tree = 1000,
+            interaction.depth = 1,
+            distribution = 'gaussian',
+            data = dat_p)
+# relative influence of variables
+relInf <- summary(gmb1, plot_it = FALSE)
+
+relInf %>% head(20) %>%
+  ggplot(aes(x = fct_reorder(var, rel_inf), y=rel_inf)) +
+  geom_col() +
+  coord_flip() +
+  labs(x = 'Variable', y = 'Relative Influence')
+```
+
+The list of most influential variables is different, but `HI_PrivateInsured` is still the most important one.
+
+### Poisson regression with GBM
+
+The `gbm` function from the `gbm3` package allows us to specify the distribution of the response variable. Since the number of calls can be considered as count data, we may apply Poisson distribution here as well.
+
+We use the raw number of calls per ZIP code, together with an offset variable--log total population.
+
+```{r}
+dat_int <- dat %>%
+  select(
+    -name,
+    -town,
+    -county,
+    -pa_name,
+    -shape_area,
+    -log_p_call,
+    -starts_with('n_call_'),
+    -starts_with('p_call'),
+    -ends_with('_land'),
+    # -contains('p.urban'),
+    -urban_popden,
+    -HSGrad,
+    -SomeColl,
+    -Bach, -Master, -Prof, -Doc,
+    # -BelowPovertyMarried,
+    # -BelowPovertyOccupied,
+    # -pop_den,
+    -total_pop
+  )
+```
+
+
+```{r, fig.width=5, fig.height=3}
+# Poisson distribution, offset by log population
+gmb2 <- gbm(n_call ~ offset(log(TotalPop)) + . -TotalPop,
+            n.tree = 1000,
+            interaction.depth = 1,
+            distribution = 'poisson',
+            data = dat_int)
+# relative influence of variables
+relInf <- summary(gmb2, plot_it = FALSE)
+
+relInf %>% head(20) %>%
+  ggplot(aes(x = fct_reorder(var, rel_inf), y=rel_inf)) +
+  geom_col() +
+  coord_flip() +
+  labs(x = 'Variable', y = 'Relative Influence')
+```
+
+This time race is identified as the most influencial factor again, but insurance status and the proportion of single moms (`HH_FemaleHead` and `HH_SingleHead`) also remained important.
+
+
+## Next Step
+
+Currently all above analyses are based on the full data we have. Samples and test are just splitting ZIP codes into groups. Another way of evaluating models is sampling call records and generate two copies of aggregated metrics for all ZIP codes, on different samples of calls, of course. The sampling process can be completely random, or based on time---i.e., train the model with old data and evaluate the model with the most recent data.

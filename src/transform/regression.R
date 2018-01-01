@@ -1,7 +1,7 @@
 # ============= Regression ===============
-library(pscl)
-library(boot)
-library(MASS)
+# library(pscl)
+# library(boot)
+# library(MASS)
 
 glm.nb <- MASS::glm.nb
 zeroinfl <- pscl::zeroinfl
@@ -37,24 +37,6 @@ zip.geo.data <- zip.geo@data
 #                   family = poisson(link = 'log'),
 #                   data = zip.geo.data))
 glm.RR(m1)
-
-zip.geo.data <- zip.geo@data
-town.geo.data <- town.geo@data
-summary(m1 <- lm(p_call ~
-                    White + Black + Hispanic + Asian + EthHet +
-                    MedHouseIncome + GINI + PubAssist + UnempRate + BelowPoverty +
-                    PopDen +
-                    AgeU5 + Age1824 + Age2534 + Age3544 + Age4554 +
-                    AtLeastBachelor,
-                  data = town.geo.data))
-summary(m1 <- glm.nb(n_call_homeless ~
-                       White + Black + Hispanic + Asian + TwoOrMore + EthHet +
-                       MedHouseIncome +
-                       PopDen + p.urbanpop +
-                       # AgeU5 + Age1824 + Age2534 + Age3544 + Age4554 +
-                       # Age5559 + I(Age6061 + Age6264 + Age6574) +
-                       AtLeastBachelor,
-                     data = zip.geo.data))
 
 summary(m1 <- glm(n_call/TotalPop ~
                     White + Black + Hispanic + Asian + EthHet +

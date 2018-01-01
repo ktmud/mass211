@@ -3,9 +3,250 @@ title: "Mass 211: Model Selection"
 output: html_notebook
 ---
 
+## Distribution of Counts
+
+```{r}
+dat <- count.town
+
+ggplot(dat, aes(x = p_call, y = ..count..)) +
+  geom_histogram()
+```
+
+
+
+## Poverty
+
+Linear regression (OLS, ordinary least square):
+
+```{r}
+dat <- zip.geo@data
+summary(m1 <- lm(
+  p_call ~
+    White + Black + Hispanic + Asian + EthHet +
+    MedHouseIncome + GINI + PubAssist + UnempRate + BelowPoverty +
+    PopDen + p.urbanpop +
+    AgeU5 + Age1824 + Age2534 + Age3544 + Age4554 +
+    AtLeastBachelor,
+  data = dat))
+```
+
+### Generaized Linear Model - Negative Binomial
+
+This model predicts the log value of the expected number of calls. Log value of the population is used as an offset.
+
+#### Town Level
+
+After eliminating extreme values, and using Backward Reduction, the model is like:
+
+```{r}
+dat <- town.geo@data %>%
+  # remove extrem values
+  filter(p_call < quantile(p_call, .99, na.rm=TRUE)) %>%
+  mutate(
+    shape_area = as.integer(shape_area),
+    TotalPop = as.integer(TotalPop)
+  ) %>%
+  # count numbers are integers
+  mutate_at(vars(starts_with('n_')), as.integer) %>%
+  # Standardize all variables
+  mutate_if(is.double, function(x) scale(x)[,1])
+
+summary(m1 <- MASS::glm.nb(
+  n_call ~
+    TwoOrMore + EthHet +
+    MedHouseIncome + 
+    Age1824 + 
+    I(Age6061 + Age6264 + Age6574) +
+    AtLeastBachelor + offset(log(TotalPop)),
+  data = dat
+))
+```
+
+#### ZIP Code Level
+
+```{r}
+dat <- zip.geo@data %>%
+  # remove extrem values
+  filter(p_call < quantile(p_call, .99, na.rm=TRUE)) %>%
+  mutate(
+    shape_area = as.integer(shape_area),
+    TotalPop = as.integer(TotalPop)
+  ) %>%
+  # count numbers are integers
+  mutate_at(vars(starts_with('n_')), as.integer) %>%
+  # Standardize all variables
+  mutate_if(is.double, function(x) scale(x)[,1])
+
+summary(m1 <- MASS::glm.nb(
+  n_call ~
+    White + Black + Hispanic + Asian + TwoOrMore + EthHet +
+    MedHouseIncome + GINI + PubAssist + UnempRate + BelowPoverty +
+    PopDen + p.urban_pop +
+    AgeU5 + Age1824 + Age2534 + Age3544 + Age4554 +
+    Age5559 + I(Age6061 + Age6264 + Age6574) +
+    AtLeastBachelor +
+    offset(log(TotalPop)),
+  data = dat
+))
+```
+
+```{r}
+
+```
+
+```{r}
+library(mvabund)
+summary(m1 <- manyglm(
+  n_call ~
+    Black +  Asian + EthHet +
+    MedHouseIncome + GINI + PubAssist +
+    PopDen  +
+    AtLeastBachelor +
+    # offset
+    offset(log(TotalPop)),
+  data = dat,
+  family = 'poisson'
+))
+plot(m1)
+```
+```{r}
+summary(m1 <- glm(
+  n_call ~
+    Black +  Asian + EthHet +
+    MedHouseIncome + GINI + PubAssist +
+    PopDen  +
+    AtLeastBachelor +
+    # offset
+    offset(log(TotalPop)),
+  data = dat,
+  family = 'poisson'
+))
+```
+
+```{r}
+summary(m1 <- glm(
+  n_call ~
+    Black + 
+    EthHet +
+    MedHouseIncome +
+    AtLeastBachelor +
+    # offset
+    offset(log(TotalPop)),
+  data = dat,
+  family = 'poisson'
+))
+```
+
+```{r}
+anova(m1, test="Chisq")
+```
+
+```{r}
+plot(m1, which=1)
+```
+
+```{r}
+summary(m2 <- MASS::glm.nb(
+  n_call ~
+    Black + 
+    EthHet +
+    MedHouseIncome +
+    AtLeastBachelor +
+    # offset
+    offset(log(TotalPop)),
+  data = dat
+))
+```
+
+```{r}
+plot(m2, which=1)
+```
+
+```{r}
+anova(m1, test="Chisq")
+```
+```
+```{r}
+plot(m1, which=1)
+```
+
+
+When reducing varibles using 
+
+```{r}
+summary(m1 <- MASS::glm.nb(
+  n_call ~
+    White + Hispanic + Asian + TwoOrMore + EthHet +
+    MedHouseIncome + PubAssist + 
+    p.urban_pop +
+    Age1824 + 
+    I(Age6061 + Age6264 + Age6574) +
+    offset(log(TotalPop)),
+  data = dat
+))
+```
+
+
+County
+
+```{r}
+```
+
+
+### Zero-Inflated Poisson model
+
+```{r}
+dat <- zip.geo@data %>%
+  mutate(
+    MedHouseIncome = scale(MedHouseIncome)[,1],
+    PopDen = scale(PopDen)[,1]
+  )
+
+AddResidual <- function(dat) {
+  zeroinfl <- pscl::zeroinfl
+  summary(m1 <- zeroinfl(
+    n_call_childcare ~
+      Black + EthHet +
+      MedHouseIncome + PubAssist + UnempRate +
+      PopDen + p.urbanpop +
+      Age3544 +
+      I(Age6061 + Age6264 + Age6574) +
+      offset(log(TotalPop))
+       | offset(log(TotalPop)) + MedHouseIncome + p.urbanpop,
+    dist = "negbin",
+    link = "logit",
+    data = dat
+  ))
+  dat <- dat %>% mutate(residual = NA) %>% select(name, residual)
+  dat[names(m1$residuals), 'residual'] <- m1$residuals
+  dat$residual
+}
+
+zip.geo@data$residual <- dat$residual
+```
+
+### Residules on a map
+
+```{r}
+
+```
+
+
+
 ## Public Health
 
 ```{r}
-dat <- town.geo@data
-
+zeroinfl <- pscl::zeroinfl
+summary(m1 <- zeroinfl(
+  n_call ~
+    Black + EthHet +
+    MedHouseIncome + PubAssist + UnempRate +
+    PopDen + p.urbanpop +
+    Age3544 +
+    I(Age6061 + Age6264 + Age6574)
+     | TotalPop,
+  dist = "negbin",
+  link = "logit",
+  data = dat
+))
 ```

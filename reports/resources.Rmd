@@ -1,0 +1,93 @@
+---
+title: "Resources available for referrals in 2-1-1"
+output: 
+  html_notebook: 
+    theme: journal
+    code_folding: hide
+---
+
+In the iCarol system, resources are kept in 4 categories: **agency**, **program**, **sites**, and **program at sites**. An agency may have multiple sites (e.g. branches of AA), and may operate multiple programs (e.g. hospitals run a HIV/STD testing program, in addition to a behavioral health assisting program, etc.). A program may be conducted in multiple sites and covering different areas. The _program at sites_ data indicate which programs are running on which sites.
+
+But the exported data is just one single table, and important information such as location, coverage area, etc., can be found in either one or all of the aforementioned four types of entities. However, taxonomy code (service types) can only be found at _programs_, and geolocation is mostly present in _sites_.
+
+To simplify future analysis, the data must be consolidated into one entity type--a single geographical entity with attributes explaining its service types and coverage areas. Therefore I used _Site_ as the starting data points, then extract and attach information from other entity types to it.
+
+1. **Agency** is used to obtain the website and contact info.
+2. **Site** is used for the name, geolocation, address and operation hours of the sites.
+3. **Program** and **Program at sites** are used to extract taxonomy code and names, as well as coverage areas of the sites.
+4. Location type (e.g. city hall, shelter, hospital, etc) is inferred from taxonomy code (maybe reverse geocoding would be a better idea?).
+
+Even after extensive cleaning, there are still some issues that seem non-trivial to fix:
+
+1. More than 70% of resources do not have an address (yet another reason for geoencoding).
+2. Some sites are not properly assigned correct coordinates, e.g., US Bankrupcy Court has three divisional offices in Massachusetts, but only one has geo coordinates.
+3. Some sites use addresses as their site names, although this does not interfere statistics.
+3. Coverage area are non standarized--they can be any of the state, county and city/town level.
+
+After cleaning and removing duplicates, there are in total `r format(nrow(sites.ma), big.mark=',')` human service sites physically located in Massachusetts, belonging to `r format(nrow(rsrc$agencies), big.mark=',')` agencies.
+
+They are now searchable at: <a target="_blank" href="https://www.algolia.com/realtime-search-demo/search-resources">https://www.algolia.com/realtime-search-demo/search-resources</a>. This is currently just a demo. It is planned to incorporate similar interface (and a map, of course) to the [Mass 211 Map](https://mass211.herokuapp.com/) web app, too.
+
+Following graph shows the normalized number of resource sites, 2-1-1 calls, and population by county.
+
+```{r, fig.width=5, fig.height=2.6, fig.retina=2, message=FALSE}
+normalize <- function(x, f = min) {
+  tmp <- f(x, na.rm=TRUE)
+  (x - tmp) / (max(x, na.rm=TRUE) - tmp)
+}
+
+sites.ma %>%
+  filter(county != 'All Countries',
+         county != 'Pueblo',
+         county != 'United States') %>%
+  count(county) %>%
+  left_join(
+    count.county, by = c('county' = 'name')
+  ) %>%
+  select(
+    county, n_resource = n, n_call,
+    population = TotalPop
+  ) %>%
+  mutate(
+    n_call = normalize(n_call),
+    population = normalize(population),
+    n_resource = normalize(n_resource),
+    county = fct_reorder(county, -n_resource)
+  ) %>%
+  gather(
+    count_name, count_var, -county
+  ) %>%
+  ggplot(aes(x = county, y = count_var, fill = count_name)) +
+  geom_bar(
+    stat = 'identity',
+    position = 'dodge'
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  ) +
+  labs(
+    y = 'Number of resource sites',
+    fill = ''
+  )
+```
+
+Intuitively, this graph compares counties with their peers in terms of calls and resources corresponding to population size. It is not hard to imagine more population should produce more resources and calls, then what really matters becomes who receives a higher number of calls with regard to its population size and does more resources mean less or more calls?
+
+It can be seen that resources have a relatively even distribution comparing to the other two variables--this is understandable because critical resources must be available to all the counties, even for remote areas with small population.
+
+There are obvious patterns in this graph: Suffolk, Worcester, Hampden can be categorized in one group, in which a relative small population produces a lot of resources and calls. This can be explained by the fact that they each has one of Massachusetts' top 3 biggest cities: Boston of Suffolk, Worcester of Worcester, Springfield of Hampden. Resources tend to agglomerate in big cities, and poor people in big cities are more likely to make 2-1-1 calls--either because there are more resources readily available to them, or because they are more poor.
+
+Counties surrounding the Suffolk county--Middlesex, Norfolk and Essex, all have a relatively high population and number of resources, but low number of calls.
+
+```{r}
+sites.ma %>%
+  count(zip, topic) %>%
+  rename(name = zip, n_resouce = n)
+```
+
+## Ideas for future analysis
+
+1. Exclude basic municipality and policing services, check what's the effect of the presence of other critical human service resources, on public health and poverty. 
+2. Use the coverage attribute and geographical accessibility to compute each ZIP code/town's "human service accessibility index". Different service and site types obviously have different implications in terms of geographical reliance. It would be a major challenge to accurately quantify the coverage areas.
+3. Evaluate the geographical reliance of different service types, provide suggestions for the locations of future resources?

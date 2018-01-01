@@ -11,3 +11,8 @@ node_modules
 *.html
 .Rproj.user
 m2m
+*.zip
+*.pdf
+*_files
+*_cache
+rsconnect
