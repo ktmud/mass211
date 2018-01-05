@@ -1,9 +1,9 @@
 Mass 211 Data Analysis Project
 ------------------------------
 
-This is the repository for all code related to the Mass 211 Data Analysis, including R code for
-data cleaning and transformation, intermediate exploratory reports, and auxliary data files collected
-from different sources.
+This is the repository for all the code used in the 2017 Mass 211 Data Analysis Project, including R code for
+data cleaning and transformation, intermediate exploratory reports, and scripts for collect and preprocess
+auxliary data files.
 
 ## File Structure
 
