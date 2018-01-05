@@ -15,6 +15,8 @@ from different sources.
  |- ref       : literature references
 ```
 
+You'd also need to install [Git Large File Storage](https://git-lfs.github.com/) if you would like to work with the source data.
+
 ## Start Working..
 
 1. Double-click `Mass 211.Rproj` to open the project in R Studio. It automatically sets the root folder of this repository as the working directory. All file paths in the source code assume you have set the working directory as such.
