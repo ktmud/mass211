@@ -15,6 +15,11 @@ from different sources.
  |- ref       : literature references
 ```
 
+## Start Working..
+
+1. Double-click `Mass 211.Rproj` to open the project in R Studio. It automatically sets the root folder of this repository as the working directory. All file paths in the source code assume you have set the working directory as such.
+2. Run `src/index.R` to process all data files. Make sure 211 data exported from the iCarol system is placed in the correponding `data/211` folder.
+
 ## Related
 
 The source code for the Mass 211 Map web app can be found at [ktmud/mass211-map](https://github.com/ktmud/mass211-map).
