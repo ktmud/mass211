@@ -3,16 +3,13 @@
 .DS_Store
 .Rproj.user/
 .Rhistory
-data/
-ref/
 tmp.*
 node_modules
+data/
 *.bib
-*.html
 .Rproj.user
 m2m
 *.zip
-*.pdf
 *_files
 *_cache
 rsconnect
